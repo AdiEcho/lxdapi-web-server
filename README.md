@@ -9,6 +9,7 @@
 | 财务系统 | 链接 |
 |---------|---------|
 | 魔方财务| [官网](https://www.idcsmart.com) |
+| WHMCS | [官网](https://www.whmcs.com) |
 
 ## 项目特色
 
