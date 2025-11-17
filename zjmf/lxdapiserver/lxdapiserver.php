@@ -679,7 +679,7 @@ function lxdapiserver_ClientAreaOutput($params, $key)
             $protocol = 'https';
             $baseUrl = $protocol . '://' . $params['server_ip'] . ':' . $params['port'];
             $jumpUrl = $baseUrl . '/container/dashboard?hash=' . $accessCode;
-            $iframeUrl = $baseUrl . '/container/dashboard/lite?hash=' . $accessCode;
+            $iframeUrl = $baseUrl . '/container/dashboard/base?hash=' . $accessCode;
         } else {
             $errorMsg = $res['msg'] ?? '获取访问码失败';
         }
