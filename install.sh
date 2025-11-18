@@ -142,14 +142,6 @@ install_base_packages() {
     install_package nginx
     install_package lvm2
     
-    info "加载 LVM 内核模块..."
-    modprobe dm-mod || true
-    if grep -q dm-mod /proc/modules; then
-        ok "LVM 内核模块已加载"
-    else
-        warn "LVM 内核模块加载失败，这可能影响后续存储配置"
-    fi
-    
     if systemctl is-active --quiet lxcfs; then
         ok "lxcfs 服务已运行"
     else
@@ -346,16 +338,6 @@ init_storage_backend() {
     if ! command -v lvm >/dev/null; then
         err "LVM 命令未找到"
     fi
-    
-    if ! grep -q dm-mod /proc/modules; then
-        warn "LVM 内核模块未加载，尝试加载..."
-        modprobe dm-mod || true
-        if ! grep -q dm-mod /proc/modules; then
-            err "LVM 内核模块加载失败，无法继续"
-        fi
-    fi
-    
-    ok "LVM 环境已就绪"
     
     local temp
     temp=$(execute_storage_init "$backend")
