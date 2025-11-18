@@ -140,6 +140,15 @@ install_base_packages() {
     install_package lxcfs
     install_package iptables-persistent
     install_package nginx
+    install_package lvm2
+    
+    info "加载 LVM 内核模块..."
+    modprobe dm-mod || true
+    if grep -q dm-mod /proc/modules; then
+        ok "LVM 内核模块已加载"
+    else
+        warn "LVM 内核模块加载失败，这可能影响后续存储配置"
+    fi
     
     if systemctl is-active --quiet lxcfs; then
         ok "lxcfs 服务已运行"
@@ -333,21 +342,21 @@ execute_storage_init() {
 init_storage_backend() {
     local backend="lvm"
     ok "使用 lvm 类型，存储池大小为 $disk_nums GB"
-    local need_reboot=false
+    
     if ! command -v lvm >/dev/null; then
-        warn "正在安装 lvm2..."
-        install_package lvm2
-        modprobe dm-mod || true
-        ok "LVM 模块加载。如果失败请重启系统后再次执行脚本"
-        echo "lvm" >/usr/local/bin/lxd_reboot
-        need_reboot=true
+        err "LVM 命令未找到"
     fi
+    
     if ! grep -q dm-mod /proc/modules; then
+        warn "LVM 内核模块未加载，尝试加载..."
         modprobe dm-mod || true
+        if ! grep -q dm-mod /proc/modules; then
+            err "LVM 内核模块加载失败，无法继续"
+        fi
     fi
-    if [ "$need_reboot" = true ]; then
-        exit 1
-    fi
+    
+    ok "LVM 环境已就绪"
+    
     local temp
     temp=$(execute_storage_init "$backend")
     local status=$?
@@ -370,14 +379,6 @@ init_storage_backend() {
 }
 
 setup_storage() {
-    if [ -f "/usr/local/bin/lxd_reboot" ]; then
-        ok "检测到系统重启，尝试继续使用 lvm"
-        rm -f /usr/local/bin/lxd_reboot
-        modprobe dm-mod || true
-        if init_storage_backend "lvm"; then
-            return 0
-        fi
-    fi
     init_storage_backend "lvm"
 }
 
@@ -883,6 +884,16 @@ main() {
     info "等待服务启动..."
     sleep 5
     systemctl status lxdapi --no-pager -l
+    echo
+    
+    info "===== 6. 访问地址 ====="
+    server_ip=$(hostname -I | awk '{print $1}')
+    info "管理员登录: http://${server_ip}:${server_port}/admin/login"
+    info "用户登录: http://${server_ip}:${server_port}/user/login"
+    info "容器登录: http://${server_ip}:${server_port}/container/login"
+    echo
+    warn "推荐使用 Cloudflare 或 Nginx 反向代理配置域名和 SSL 证书以提高安全性"
+    echo
 }
 
 main
