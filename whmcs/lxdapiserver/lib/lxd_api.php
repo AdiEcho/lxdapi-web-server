@@ -1,0 +1,94 @@
+<?php
+
+class LXD_API
+{
+    private $serverip;
+    private $serverport;
+    private $apikey;
+    private $protocol = 'https';
+    private $timeout = 30;
+    
+    public function __construct($params)
+    {
+        $this->serverip = $params['serverip'];
+        $this->serverport = $params['serverport'] ?: '8848';
+        $this->apikey = $params['serveraccesshash'];
+    }
+    
+    public function get($endpoint, $data = [])
+    {
+        return $this->request('GET', $endpoint, $data);
+    }
+    
+    public function post($endpoint, $data = [])
+    {
+        return $this->request('POST', $endpoint, $data);
+    }
+    
+    public function delete($endpoint, $data = [])
+    {
+        return $this->request('DELETE', $endpoint, $data);
+    }
+    
+    private function request($method, $endpoint, $data = [])
+    {
+        $url = $this->protocol . '://' . $this->serverip . ':' . $this->serverport . $endpoint;
+        
+        if ($method === 'GET' && !empty($data) && strpos($endpoint, '?') === false) {
+            $url .= '?' . http_build_query($data);
+        }
+        
+        $ch = curl_init();
+        
+        $headers = [
+            'X-API-Hash: ' . $this->apikey,
+            'Content-Type: application/json',
+        ];
+        
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2,
+        ]);
+        
+        if (($method === 'POST' || $method === 'DELETE') && !empty($data)) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        }
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        $curlErrno = curl_errno($ch);
+        curl_close($ch);
+        
+        if ($curlErrno) {
+            throw new Exception("连接失败: " . $curlError);
+        }
+        
+        $decoded = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception("响应解析失败: " . json_last_error_msg());
+        }
+        
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return [
+                'success' => isset($decoded['code']) ? $decoded['code'] == 200 : true,
+                'message' => $decoded['msg'] ?? $decoded['message'] ?? '',
+                'data' => $decoded['data'] ?? $decoded,
+            ];
+        }
+        
+        return [
+            'success' => false,
+            'message' => $decoded['msg'] ?? $decoded['message'] ?? 'HTTP ' . $httpCode,
+            'data' => null,
+        ];
+    }
+}
