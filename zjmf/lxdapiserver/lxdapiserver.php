@@ -18,7 +18,7 @@ function lxdapiserver_MetaData()
 {
     return [
         'DisplayName' => '魔方财务-LXD对接插件 by xkatld',
-        'APIVersion'  => 'v2.0.0-main',
+        'APIVersion'  => 'v2.0.1',
         'HelpDoc'     => 'https://github.com/xkatld/lxdapi-web-server',
     ];
 }
@@ -577,9 +577,13 @@ function lxdapiserver_Reinstall($params)
 
 function lxdapiserver_AdminButton($params)
 {
-    return [
-        ['label' => '重置流量', 'function' => 'TrafficReset'],
-    ];
+    if (!empty($params['domain'])) {
+        return [
+            'Sync' => '同步状态',
+            'TrafficReset' => '重置流量',
+        ];
+    }
+    return [];
 }
 
 function lxdapiserver_TrafficReset($params)
