@@ -202,7 +202,7 @@ function lxdapiserver_CreateAccount(array $params)
         
         $password = lxdapiserver_generate_password();
         
-        $containerName = 'lxd11451' . $params['serviceid'];
+        $containerName = 'lxd11451' . $params['clientsdetails']['userid'] . $params['serviceid'];
         
         $cpu = !empty($params['configoptions']['cpus']) ? $params['configoptions']['cpus'] : $params['configoption1'];
         $memory = !empty($params['configoptions']['memory']) ? $params['configoptions']['memory'] : $params['configoption2'];
