@@ -552,12 +552,14 @@ function lxdapiserver_Sync($params)
 function lxdapiserver_Reinstall($params)
 {
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
-    lxdapiserver_debug('重装系统', ['domain' => $containerName]);
+    lxdapiserver_debug('重装系统', ['domain' => $containerName, 'reinstall_os' => $params['reinstall_os'] ?? 'null']);
     
-    $configoptions = $params['configoptions'];
+    if (empty($params['reinstall_os'])) {
+        return ['status' => 'error', 'msg' => '操作系统参数错误'];
+    }
     
     $requestData = [
-        'image' => $configoptions['image'] ?? 'alpine320',
+        'image' => $params['reinstall_os'],
         'password' => $params['password'],
     ];
     
