@@ -10,9 +10,9 @@
 
 ## 支持财务
 
-| 魔方财务 | WHMCS | FOSSBilling | 
+| ①魔方财务 | ②WHMCS | ③FOSSBilling | 
 |---------|---------|---------|
-| [魔方财务](https://www.idcsmart.com)| [WHMCS](https://www.whmcs.com) |[FOSSBilling](https://fossbilling.org/)|
+| [官网](https://www.idcsmart.com)| [官网](https://www.whmcs.com) |[官网](https://fossbilling.org/)|
 
 ## 项目特色
 
