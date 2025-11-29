@@ -4,7 +4,7 @@
  *
  * @package    WHMCS-LXD对接插件 by xkatld
  * @author     xkatld
- * @version    v2.0.1
+ * @version    v2.0.2
  * @link       https://github.com/xkatld/lxdapi-web-server
  */
 
@@ -21,10 +21,10 @@ function lxdapiserver_MetaData()
 {
     return [
         'DisplayName' => 'WHMCS-LXD对接插件 by xkatld',
-        'APIVersion' => 'v2.0.1',
+        'APIVersion' => 'v2.0.2',
         'RequiresServer' => true,
-        'DefaultNonSSLPort' => '8848',
-        'DefaultSSLPort' => '8848',
+        'DefaultNonSSLPort' => '8443',
+        'DefaultSSLPort' => '8443',
         'ServiceSingleSignOnLabel' => 'Login to Console',
         'AdminSingleSignOnLabel' => 'Login to Console as Admin',
     ];
@@ -281,7 +281,7 @@ function lxdapiserver_SuspendAccount(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->post('/api/system/containers/pause?name=' . urlencode($params['domain']), []);
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=pause', []);
         
         return $result['success'] ? 'success' : ($result['message'] ?? '暂停失败');
         
@@ -294,7 +294,7 @@ function lxdapiserver_UnsuspendAccount(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->post('/api/system/containers/resume?name=' . urlencode($params['domain']), []);
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=resume', []);
         
         return $result['success'] ? 'success' : ($result['message'] ?? '恢复失败');
         
@@ -307,7 +307,7 @@ function lxdapiserver_TerminateAccount(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->delete('/api/system/containers?name=' . urlencode($params['domain']));
+        $result = $api->delete('/api/system/containers/' . urlencode($params['domain']));
         
         return $result['success'] ? 'success' : ($result['message'] ?? '删除失败');
         
@@ -321,8 +321,7 @@ function lxdapiserver_ChangePassword(array $params)
     try {
         $api = new LXD_API($params);
         
-        $result = $api->post('/api/system/containers/reset-password', [
-            'name' => $params['domain'],
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=reset-password', [
             'password' => $params['password']
         ]);
 
@@ -340,18 +339,10 @@ function lxdapiserver_ChangePassword(array $params)
 
 function lxdapiserver_ClientArea(array $params)
 {
-    $page = $_GET['page'] ?? '';
-    
-    if ($page !== 'manage') {
-        return [];
-    }
-    
     try {
         $api = new LXD_API($params);
         
-        $result = $api->post('/api/system/containers/access-code', [
-            'container_name' => $params['domain']
-        ]);
+        $result = $api->get('/api/system/containers/' . urlencode($params['domain']) . '/credential');
         
         $jumpUrl = '';
         $iframeUrl = '';
@@ -360,7 +351,8 @@ function lxdapiserver_ClientArea(array $params)
         if ($result['success'] && !empty($result['data']['access_code'])) {
             $accessCode = $result['data']['access_code'];
             $protocol = 'https';
-            $baseUrl = $protocol . '://' . $params['serverip'] . ':' . $params['serverport'];
+            $serverHost = !empty($params['serverhostname']) ? $params['serverhostname'] : $params['serverip'];
+            $baseUrl = $protocol . '://' . $serverHost . ':' . $params['serverport'];
             $jumpUrl = $baseUrl . '/container/dashboard?hash=' . $accessCode;
             $iframeUrl = $baseUrl . '/container/dashboard/lite?hash=' . $accessCode;
         } else {
@@ -368,8 +360,8 @@ function lxdapiserver_ClientArea(array $params)
         }
         
         return [
-            'tabOverviewReplacementTemplate' => 'templates/overview.tpl',
-            'templateVariables' => [
+            'templatefile' => 'templates/overview',
+            'vars' => [
                 'jump_url' => $jumpUrl,
                 'iframe_url' => $iframeUrl,
                 'error_msg' => $errorMsg,
@@ -378,8 +370,8 @@ function lxdapiserver_ClientArea(array $params)
         
     } catch (Exception $e) {
         return [
-            'tabOverviewReplacementTemplate' => 'templates/overview.tpl',
-            'templateVariables' => [
+            'templatefile' => 'templates/overview',
+            'vars' => [
                 'error_msg' => $e->getMessage(),
             ],
         ];
@@ -402,7 +394,7 @@ function lxdapiserver_start(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->post('/api/system/containers/start?name=' . urlencode($params['domain']), []);
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=start', []);
         return $result['success'] ? 'success' : ($result['message'] ?? '开机失败');
     } catch (Exception $e) {
         return $e->getMessage();
@@ -413,7 +405,7 @@ function lxdapiserver_stop(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->post('/api/system/containers/stop?name=' . urlencode($params['domain']), []);
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=stop', []);
         return $result['success'] ? 'success' : ($result['message'] ?? '关机失败');
     } catch (Exception $e) {
         return $e->getMessage();
@@ -424,7 +416,7 @@ function lxdapiserver_reboot(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->post('/api/system/containers/restart?name=' . urlencode($params['domain']), []);
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=restart', []);
         return $result['success'] ? 'success' : ($result['message'] ?? '重启失败');
     } catch (Exception $e) {
         return $e->getMessage();
@@ -437,7 +429,7 @@ function lxdapiserver_reinstall(array $params)
         $api = new LXD_API($params);
         $password = lxdapiserver_generate_password();
         
-        $result = $api->post('/api/system/containers/reinstall?name=' . urlencode($params['domain']), [
+        $result = $api->post('/api/system/containers/' . urlencode($params['domain']) . '/action?action=reinstall', [
             'image' => $params['configoption4'],
             'password' => $password
         ]);
@@ -458,7 +450,7 @@ function lxdapiserver_sync(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->get('/api/system/containers/status?name=' . urlencode($params['domain']));
+        $result = $api->get('/api/system/containers/' . urlencode($params['domain']));
         
         if ($result['success'] && !empty($result['data'])) {
             $updateData = [];
@@ -507,7 +499,7 @@ function lxdapiserver_AdminServicesTabFields(array $params)
 {
     try {
         $api = new LXD_API($params);
-        $result = $api->get('/api/system/containers/status?name=' . urlencode($params['domain']));
+        $result = $api->get('/api/system/containers/' . urlencode($params['domain']));
         
         if ($result['success'] && !empty($result['data'])) {
             $data = $result['data'];
@@ -538,7 +530,8 @@ function lxdapiserver_ServiceSingleSignOn(array $params)
         ]);
 
         if ($result['success'] && !empty($result['data']['token'])) {
-            $consoleUrl = 'https://' . $params['serverip'] . ':' . $params['serverport'] . '/console?token=' . $result['data']['token'];
+            $serverHost = !empty($params['serverhostname']) ? $params['serverhostname'] : $params['serverip'];
+            $consoleUrl = 'https://' . $serverHost . ':' . $params['serverport'] . '/console?token=' . $result['data']['token'];
             
             return [
                 'success' => true,

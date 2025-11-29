@@ -10,9 +10,9 @@ class LXD_API
     
     public function __construct($params)
     {
-        $this->serverip = $params['serverip'];
-        $this->serverport = $params['serverport'] ?: '8848';
-        $this->apikey = $params['serveraccesshash'];
+        $this->serverip = !empty($params['serverhostname']) ? $params['serverhostname'] : ($params['serverip'] ?? '');
+        $this->serverport = $params['serverport'] ?: '8443';
+        $this->apikey = $params['serveraccesshash'] ?? '';
     }
     
     public function get($endpoint, $data = [])
@@ -32,6 +32,9 @@ class LXD_API
     
     private function request($method, $endpoint, $data = [])
     {
+        if (empty($this->serverip)) {
+            throw new Exception("服务器地址未配置，请在WHMCS服务器设置中填写主机名或IP地址");
+        }
         $url = $this->protocol . '://' . $this->serverip . ':' . $this->serverport . $endpoint;
         
         if ($method === 'GET' && !empty($data) && strpos($endpoint, '?') === false) {
@@ -69,7 +72,21 @@ class LXD_API
         curl_close($ch);
         
         if ($curlErrno) {
-            throw new Exception("连接失败: " . $curlError);
+            $errorMessages = [
+                3 => 'URL格式错误',
+                6 => '无法解析主机名',
+                7 => '无法连接到服务器',
+                28 => '连接超时',
+                35 => 'SSL/TLS握手失败',
+                60 => 'SSL证书验证失败',
+            ];
+            $errorDesc = $errorMessages[$curlErrno] ?? "错误码: {$curlErrno}";
+            $errorDetail = $curlError ?: $errorDesc;
+            throw new Exception("连接失败 [{$url}]: {$errorDetail}");
+        }
+        
+        if (empty($response)) {
+            throw new Exception("服务器返回空响应 (HTTP {$httpCode})");
         }
         
         $decoded = json_decode($response, true);
