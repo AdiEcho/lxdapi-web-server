@@ -1,0 +1,18 @@
+{% apply spaceless %}
+{% autoescape false %}
+
+<p>尊敬的 {{ client.first_name }}，</p>
+
+<p>您的容器服务已取消。</p>
+
+<table style="border-collapse: collapse; width: 100%; max-width: 500px;">
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>容器名称</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ service.container_name }}</td>
+    </tr>
+</table>
+
+<p style="margin-top: 20px;">如有疑问，请联系客服。</p>
+
+{% endautoescape %}
+{% endapply %}
