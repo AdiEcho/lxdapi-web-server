@@ -18,7 +18,7 @@ function lxdapiserver_MetaData()
 {
     return [
         'DisplayName' => '魔方财务-LXD对接插件 by xkatld',
-        'APIVersion'  => 'v2.0.1',
+        'APIVersion'  => 'v2.0.2',
         'HelpDoc'     => 'https://github.com/xkatld/lxdapi-web-server',
     ];
 }
@@ -360,7 +360,7 @@ function lxdapiserver_TerminateAccount($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('删除容器', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName);
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'DELETE');
     
     if ($res === null) {
@@ -379,7 +379,7 @@ function lxdapiserver_On($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('启动容器', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/start?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=start';
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'POST');
     
     if ($res === null) {
@@ -398,7 +398,7 @@ function lxdapiserver_Off($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('停止容器', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/stop?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=stop';
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'POST');
     
     if ($res === null) {
@@ -417,7 +417,7 @@ function lxdapiserver_Reboot($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('重启容器', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/restart?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=restart';
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'POST');
     
     if ($res === null) {
@@ -436,7 +436,7 @@ function lxdapiserver_SuspendAccount($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('暂停容器', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/pause?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=pause';
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'POST');
     
     if ($res === null) {
@@ -455,7 +455,7 @@ function lxdapiserver_UnsuspendAccount($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('恢复容器', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/resume?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=resume';
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'POST');
     
     if ($res === null) {
@@ -474,7 +474,7 @@ function lxdapiserver_Status($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('查询状态', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/status?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName);
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'GET');
     
     if ($res === null) {
@@ -515,7 +515,7 @@ function lxdapiserver_Sync($params)
     $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
     lxdapiserver_debug('同步容器信息', ['domain' => $containerName]);
     
-    $endpoint = '/api/system/containers/status?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName);
     $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'GET');
     
     if ($res === null) {
@@ -561,7 +561,7 @@ function lxdapiserver_Reinstall($params)
         'password' => $params['password'],
     ];
     
-    $endpoint = '/api/system/containers/reinstall?name=' . urlencode($containerName);
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=reinstall';
     $res = lxdapiserver_ApiRequest($params, $endpoint, $requestData, 'POST');
     
     if ($res === null) {
@@ -610,11 +610,11 @@ function lxdapiserver_CrackPassword($params, $new_pass)
     lxdapiserver_debug('重置密码', ['domain' => $containerName]);
     
     $requestData = [
-        'name' => $containerName,
         'password' => $new_pass
     ];
     
-    $res = lxdapiserver_ApiRequest($params, '/api/system/containers/reset-password', $requestData, 'POST');
+    $endpoint = '/api/system/containers/' . urlencode($containerName) . '/action?action=reset-password';
+    $res = lxdapiserver_ApiRequest($params, $endpoint, $requestData, 'POST');
     
     if ($res === null) {
         return ['status' => 'error', 'msg' => '请求失败'];
@@ -670,8 +670,8 @@ function lxdapiserver_ClientAreaOutput($params, $key)
     if ($key == 'info') {
         $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
         
-        $requestData = ['container_name' => $containerName];
-        $res = lxdapiserver_ApiRequest($params, '/api/system/containers/access-code', $requestData, 'POST');
+        $endpoint = '/api/system/containers/' . urlencode($containerName) . '/credential';
+        $res = lxdapiserver_ApiRequest($params, $endpoint, [], 'GET');
         
         $jumpUrl = '';
         $iframeUrl = '';
