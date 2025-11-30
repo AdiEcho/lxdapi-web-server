@@ -414,6 +414,7 @@ init_storage_backend() {
             install_package lvm2
             ;;
         zfs)
+            install_package zfs-dkms
             install_package zfsutils-linux
             ;;
         btrfs)
