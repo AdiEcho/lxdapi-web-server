@@ -137,17 +137,15 @@ install_base_packages() {
     install_package curl
     install_package sudo
     install_package unzip
-    install_package lxcfs
     install_package iptables-persistent
     install_package nginx
-    install_package lvm2
     
-    if systemctl is-active --quiet lxcfs; then
-        ok "lxcfs 服务已运行"
-    else
-        service_manager start lxcfs
-        service_manager enable lxcfs
-        ok "lxcfs 服务已启动并设置为自动启动"
+    if dpkg -l lxcfs 2>/dev/null | grep -q "^ii"; then
+        warn "检测到 deb 版 lxcfs，正在移除以避免与 snap 版 LXD 冲突..."
+        systemctl stop lxcfs 2>/dev/null || true
+        systemctl disable lxcfs 2>/dev/null || true
+        apt-get remove -y lxcfs >/dev/null 2>&1
+        ok "deb 版 lxcfs 已移除，将使用 snap 版 LXD 内置的 lxcfs"
     fi
     
     if systemctl is-active --quiet nginx; then
@@ -188,70 +186,77 @@ install_lxd() {
             snap install core 2>/dev/null
             snap install lxd --channel=latest/stable 2>/dev/null
         fi
-        ! lxc -h >/dev/null 2>&1 && echo 'alias lxc="/snap/bin/lxc"' >>/root/.bashrc && source /root/.bashrc
+        snap alias lxd.lxc lxc 2>/dev/null
+        snap alias lxd.lxd lxd 2>/dev/null
+        if [ ! -f /etc/profile.d/snap.sh ]; then
+            echo 'export PATH=$PATH:/snap/bin' > /etc/profile.d/snap.sh
+        fi
         export PATH=$PATH:/snap/bin
-        ! lxc -h >/dev/null 2>&1 && err 'lxc 路径有问题，请检查修复'
+        if ! command -v lxc >/dev/null 2>&1; then
+            err 'lxc 路径有问题，请检查 snap alias'
+        fi
         ok "LXD 安装完成"
     fi
+    
+    info "配置 LXD..."
+    snap set lxd lxcfs.flags="-l" 2>/dev/null
+    snap set lxd daemon.debug=false 2>/dev/null
+    snap restart lxd 2>/dev/null
+    sleep 3
+    ok "LXD 已配置（lxcfs legacy 模式 + 关闭调试）"
 }
 
 configure_resources() {
-   if [ "${noninteractive:-false}" = true ]; then
-       available_space=$(get_available_space)
-       disk_nums=$((available_space - 1))
-       storage_path=""
-   else
-       while true; do
-           reading "是否需要指定存储池的自定义路径？(y/n) [n]：" use_custom_path
-           use_custom_path=${use_custom_path:-n}
-           if [[ "$use_custom_path" =~ ^[yYnN]$ ]]; then
-               break
-           else
-               warn "请输入 y 或 n"
-           fi
-       done
-       if [[ "$use_custom_path" =~ ^[yY]$ ]]; then
-           while true; do
-               reading "请输入自定义存储路径，例如 /data/lxd-storage：" storage_path
-               if [[ -n "$storage_path" && "$storage_path" =~ ^/.+ ]]; then
-                   if [ ! -d "$storage_path" ]; then
-                       mkdir -p "$storage_path" 2>/dev/null
-                       if [ $? -eq 0 ]; then
-                           ok "已创建目录：$storage_path"
-                           break
-                       else
-                           warn "创建目录失败，请检查权限或尝试其他路径"
-                       fi
-                   else
-                       break
-                   fi
-               else
-                   warn "请输入以 / 开头的有效绝对路径"
-               fi
-           done
-       else
-           storage_path=""
-       fi
-       while true; do
-           reading "宿主机需要开设多大的存储池？单位 GB，需要 10G 则输入 10：" disk_nums
-           if [[ "$disk_nums" =~ ^[1-9][0-9]*$ ]]; then
-               break
-           else
-               warn "输入无效，请输入一个正整数"
-           fi
-       done
-   fi
+    while true; do
+        reading "请选择存储后端类型 lvm/btrfs/zfs [lvm]：" storage_backend
+        storage_backend=${storage_backend:-lvm}
+        if [[ "$storage_backend" =~ ^(lvm|zfs|btrfs)$ ]]; then
+            break
+        else
+            warn "请输入 lvm、btrfs 或 zfs"
+        fi
+    done
+    while true; do
+        reading "是否需要指定存储池的自定义路径？(y/n) [n]：" use_custom_path
+        use_custom_path=${use_custom_path:-n}
+        if [[ "$use_custom_path" =~ ^[yYnN]$ ]]; then
+            break
+        else
+            warn "请输入 y 或 n"
+        fi
+    done
+    if [[ "$use_custom_path" =~ ^[yY]$ ]]; then
+        while true; do
+            reading "请输入自定义存储路径 [/var/lib/lxd/storage-pools]：" storage_path
+            storage_path=${storage_path:-/var/lib/lxd/storage-pools}
+            if [[ -n "$storage_path" && "$storage_path" =~ ^/.+ ]]; then
+                if [ ! -d "$storage_path" ]; then
+                    mkdir -p "$storage_path" 2>/dev/null
+                    if [ $? -eq 0 ]; then
+                        ok "已创建目录：$storage_path"
+                        break
+                    else
+                        warn "创建目录失败，请检查权限或尝试其他路径"
+                    fi
+                else
+                    break
+                fi
+            else
+                warn "请输入以 / 开头的有效绝对路径"
+            fi
+        done
+    else
+        storage_path=""
+    fi
+    while true; do
+        reading "宿主机需要开设多大的存储池？单位 GB，需要 10G 则输入 10：" disk_nums
+        if [[ "$disk_nums" =~ ^[1-9][0-9]*$ ]]; then
+            break
+        else
+            warn "输入无效，请输入一个正整数"
+        fi
+    done
 }
-
-get_available_space() {
-    local available_space
-    available_space=$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')
-    echo "$available_space"
-}
-
-
-
-
 
 create_sparse_file() {
     local file_path="$1"
@@ -276,13 +281,11 @@ create_sparse_file() {
     fi
 }
 
-create_storage_pool_with_custom_path() {
-    local backend="$1"
-    local storage_path="$2"
-    local disk_nums="$3"
-    local loop_file temp status
-    mkdir -p "$storage_path"
-    loop_file="$storage_path/lvm_pool.img"
+create_lvm_storage_pool() {
+    local storage_path="$1"
+    local disk_nums="$2"
+    local loop_file="$storage_path/lvm_pool.img"
+    
     ok "创建 LVM 存储池..."
     if [ -f "$loop_file" ]; then
         warn "检测到旧的循环文件，正在清理..."
@@ -301,10 +304,81 @@ create_storage_pool_with_custom_path() {
     pvcreate "$loop_dev" >/dev/null 2>&1
     vgcreate lxd_vg "$loop_dev" >/dev/null 2>&1
     echo "$loop_file" > "$storage_path/lvm_loop_file.txt"
-    temp=$(/snap/bin/lxc storage create default lvm source=lxd_vg 2>&1)
-    status=$?
-    echo "$temp"
-    return $status
+    /snap/bin/lxc storage create default lvm source=lxd_vg 2>&1
+    return $?
+}
+
+create_zfs_storage_pool() {
+    local storage_path="$1"
+    local disk_nums="$2"
+    local loop_file="$storage_path/zfs_pool.img"
+    
+    ok "创建 ZFS 存储池..."
+    if [ -f "$loop_file" ]; then
+        warn "检测到旧的循环文件，正在清理..."
+        zpool destroy lxd_zpool 2>/dev/null || true
+        rm -f "$loop_file"
+    fi
+    ok "创建稀疏文件：$loop_file ${disk_nums}GB..."
+    if ! create_sparse_file "$loop_file" "$disk_nums"; then
+        return 1
+    fi
+    ok "创建 ZFS 池..."
+    zpool create -f lxd_zpool "$loop_file" 2>/dev/null
+    echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
+    /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
+    return $?
+}
+
+create_btrfs_storage_pool() {
+    local storage_path="$1"
+    local disk_nums="$2"
+    local loop_file="$storage_path/btrfs_pool.img"
+    local mount_point="/var/lib/lxd/storage-pools/default"
+    
+    ok "创建 Btrfs 存储池..."
+    if [ -f "$loop_file" ]; then
+        warn "检测到旧的循环文件，正在清理..."
+        umount "$mount_point" 2>/dev/null || true
+        losetup -d $(losetup -j "$loop_file" | cut -d: -f1) 2>/dev/null || true
+        rm -f "$loop_file"
+    fi
+    ok "创建稀疏文件：$loop_file ${disk_nums}GB..."
+    if ! create_sparse_file "$loop_file" "$disk_nums"; then
+        return 1
+    fi
+    ok "设置循环设备..."
+    loop_dev=$(losetup -f)
+    losetup "$loop_dev" "$loop_file"
+    ok "格式化为 Btrfs..."
+    mkfs.btrfs -f "$loop_dev" >/dev/null 2>&1
+    mkdir -p "$mount_point"
+    mount "$loop_dev" "$mount_point"
+    echo "$loop_file" > "$storage_path/btrfs_loop_file.txt"
+    echo "$loop_dev $mount_point btrfs defaults 0 0" >> /etc/fstab
+    /snap/bin/lxc storage create default btrfs source="$mount_point" 2>&1
+    return $?
+}
+
+create_storage_pool_with_custom_path() {
+    local backend="$1"
+    local storage_path="$2"
+    local disk_nums="$3"
+    
+    mkdir -p "$storage_path"
+    
+    case "$backend" in
+        lvm)
+            create_lvm_storage_pool "$storage_path" "$disk_nums"
+            ;;
+        zfs)
+            create_zfs_storage_pool "$storage_path" "$disk_nums"
+            ;;
+        btrfs)
+            create_btrfs_storage_pool "$storage_path" "$disk_nums"
+            ;;
+    esac
+    return $?
 }
 
 execute_storage_init() {
@@ -313,14 +387,14 @@ execute_storage_init() {
     local status
     if [ -n "$storage_path" ]; then
         if create_storage_pool_with_custom_path "$backend" "$storage_path" "$disk_nums"; then
-            ok "LVM 存储池创建成功"
+            ok "$backend 存储池创建成功"
             
             /snap/bin/lxd init --auto >/dev/null 2>&1 || true
             
             temp="Storage pool created successfully"
             status=0
         else
-            temp="Failed to create LVM storage pool"
+            temp="Failed to create $backend storage pool"
             status=1
         fi
     else
@@ -332,12 +406,20 @@ execute_storage_init() {
 }
 
 init_storage_backend() {
-    local backend="lvm"
-    ok "使用 lvm 类型，存储池大小为 $disk_nums GB"
+    local backend="${storage_backend:-lvm}"
+    ok "使用 $backend 类型，存储池大小为 $disk_nums GB"
     
-    if ! command -v lvm >/dev/null; then
-        err "LVM 命令未找到"
-    fi
+    case "$backend" in
+        lvm)
+            install_package lvm2
+            ;;
+        zfs)
+            install_package zfsutils-linux
+            ;;
+        btrfs)
+            install_package btrfs-progs
+            ;;
+    esac
     
     local temp
     temp=$(execute_storage_init "$backend")
@@ -351,17 +433,21 @@ init_storage_backend() {
         echo "$temp"
     fi
     if [ $status -eq 0 ]; then
-        ok "使用 lvm 初始化成功"
-        echo "lvm" >/usr/local/bin/lxd_storage_type
+        ok "使用 $backend 初始化成功"
+        echo "$backend" >/usr/local/bin/lxd_storage_type
         return 0
     else
-        err "使用 lvm 初始化失败"
+        err "使用 $backend 初始化失败"
         return 1
     fi
 }
 
 setup_storage() {
-    init_storage_backend "lvm"
+    if [ -f "/usr/local/bin/lxd_reboot" ]; then
+        rm -f /usr/local/bin/lxd_reboot
+        info "检测到上次安装未完成，已清理重启标志"
+    fi
+    init_storage_backend
 }
 
 download_and_import_image() {
@@ -520,8 +606,8 @@ configure_lxdapi() {
         err "配置文件不存在: $config_file"
     fi
     
-    reading "请输入服务端口 [8848]：" server_port
-    server_port=${server_port:-8848}
+    reading "请输入服务端口 [8443]：" server_port
+    server_port=${server_port:-8443}
     
     reading "请输入API密钥 [随机生成]：" api_hash
     if [ -z "$api_hash" ]; then
@@ -529,8 +615,8 @@ configure_lxdapi() {
         ok "API密钥已生成: $api_hash"
     fi
     
-    reading "请输入流量采集间隔秒数 [20]：" traffic_interval
-    traffic_interval=${traffic_interval:-20}
+    reading "请输入流量采集间隔秒数 [30]：" traffic_interval
+    traffic_interval=${traffic_interval:-30}
     
     reading "请输入流量批量更新数量 [5]：" traffic_batch_size
     traffic_batch_size=${traffic_batch_size:-5}
@@ -794,178 +880,6 @@ EOF
     fi
 }
 
-create_management_command() {
-    info "创建 lxdapi 管理命令..."
-    
-    cat > /usr/local/bin/lxdapi << 'EOF'
-#!/bin/bash
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log() { echo -e "$1"; }
-ok() { log "${GREEN}[OK]${NC} $1"; }
-info() { log "${BLUE}[INFO]${NC} $1"; }
-warn() { log "${YELLOW}[WARN]${NC} $1"; }
-err() { log "${RED}[ERR]${NC} $1"; }
-
-show_menu() {
-    clear
-    echo "=========================================="
-    echo "         lxdapi 服务管理工具"
-    echo "=========================================="
-    echo "1. 启动服务"
-    echo "2. 停止服务"
-    echo "3. 重启服务"
-    echo "4. 查看服务状态"
-    echo "5. 查看实时日志"
-    echo "6. 查看配置信息"
-    echo "7. 查看访问地址"
-    echo "0. 退出"
-    echo "=========================================="
-}
-
-get_config_value() {
-    local key=$1
-    local config_file="/opt/lxdapi/configs/config.yaml"
-    if [ -f "$config_file" ]; then
-        grep "^[[:space:]]*${key}:" "$config_file" | head -1 | sed 's/.*:[[:space:]]*//' | tr -d '"' | tr -d "'"
-    fi
-}
-
-start_service() {
-    info "正在启动 lxdapi 服务..."
-    systemctl start lxdapi
-    sleep 2
-    if systemctl is-active --quiet lxdapi; then
-        ok "服务启动成功"
-    else
-        err "服务启动失败"
-        warn "查看错误日志："
-        journalctl -u lxdapi -n 20 --no-pager
-    fi
-}
-
-stop_service() {
-    info "正在停止 lxdapi 服务..."
-    systemctl stop lxdapi
-    sleep 1
-    if ! systemctl is-active --quiet lxdapi; then
-        ok "服务已停止"
-    else
-        err "服务停止失败"
-    fi
-}
-
-restart_service() {
-    info "正在重启 lxdapi 服务..."
-    systemctl restart lxdapi
-    sleep 2
-    if systemctl is-active --quiet lxdapi; then
-        ok "服务重启成功"
-    else
-        err "服务重启失败"
-        warn "查看错误日志："
-        journalctl -u lxdapi -n 20 --no-pager
-    fi
-}
-
-show_status() {
-    echo
-    info "===== 服务状态 ====="
-    systemctl status lxdapi --no-pager -l
-    echo
-}
-
-show_logs() {
-    info "===== 实时日志 (按 Ctrl+C 退出) ====="
-    journalctl -u lxdapi -f
-}
-
-show_config() {
-    echo
-    info "===== 配置信息 ====="
-    local config_file="/opt/lxdapi/configs/config.yaml"
-    if [ -f "$config_file" ]; then
-        info "配置文件: $config_file"
-        echo
-        info "服务端口: $(get_config_value 'port')"
-        info "数据库类型: $(get_config_value 'type')"
-        info "任务队列: $(get_config_value 'backend')"
-    else
-        err "配置文件不存在"
-    fi
-    echo
-}
-
-show_access_info() {
-    echo
-    info "===== 访问地址 ====="
-    local server_port=$(get_config_value 'port')
-    local server_ip=$(hostname -I | awk '{print $1}')
-    
-    if [ -n "$server_port" ] && [ -n "$server_ip" ]; then
-        info "管理员登录: http://${server_ip}:${server_port}/admin/login"
-        info "用户登录: http://${server_ip}:${server_port}/user/login"
-        info "容器登录: http://${server_ip}:${server_port}/container/login"
-    else
-        err "无法获取访问信息"
-    fi
-    echo
-    warn "推荐使用 Cloudflare 或 Nginx 反向代理配置域名和 SSL 证书"
-    echo
-}
-
-while true; do
-    show_menu
-    read -p "请选择操作 [0-7]: " choice
-    
-    case $choice in
-        1)
-            start_service
-            ;;
-        2)
-            stop_service
-            ;;
-        3)
-            restart_service
-            ;;
-        4)
-            show_status
-            ;;
-        5)
-            show_logs
-            ;;
-        6)
-            show_config
-            ;;
-        7)
-            show_access_info
-            ;;
-        0)
-            info "退出管理工具"
-            exit 0
-            ;;
-        *)
-            err "无效选项，请重新选择"
-            ;;
-    esac
-    
-    if [ "$choice" != "5" ]; then
-        echo
-        read -p "按 Enter 键继续..."
-    fi
-done
-EOF
-    
-    chmod +x /usr/local/bin/lxdapi
-    ok "管理命令已创建: /usr/local/bin/lxdapi"
-    info "现在可以直接使用 'lxdapi' 命令管理服务"
-}
-
 main() {
     print_step "1" "5" "初始化环境"
     set_locale
@@ -988,7 +902,6 @@ main() {
     deploy_lxdapi
     configure_lxdapi
     setup_lxdapi_service
-    create_management_command
     ok "lxdapi 部署完成"
 
     echo
@@ -1039,20 +952,6 @@ main() {
     info "等待服务启动..."
     sleep 5
     systemctl status lxdapi --no-pager -l
-    echo
-    
-    info "===== 6. 访问地址 ====="
-    server_ip=$(hostname -I | awk '{print $1}')
-    info "管理员登录: http://${server_ip}:${server_port}/admin/login"
-    info "用户登录: http://${server_ip}:${server_port}/user/login"
-    info "容器登录: http://${server_ip}:${server_port}/container/login"
-    echo
-    warn "推荐使用 Cloudflare 或 Nginx 反向代理配置域名和 SSL 证书以提高安全性"
-    echo
-    
-    info "===== 7. 快捷管理命令 ====="
-    info "使用 'lxdapi' 命令可以快速管理服务（启动/停止/重启/查看状态等）"
-    echo
 }
 
 main
