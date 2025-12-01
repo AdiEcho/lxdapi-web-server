@@ -14,6 +14,16 @@ class Client extends \Api_Abstract
         [$order, $service] = $this->getOrderAndService((int)$data['order_id']);
         $server = $this->di['db']->load('service_lxdapi_server', $service->server_id);
 
+        if (!$server) {
+            return [
+                'container_name' => $service->container_name,
+                'password' => $service->password,
+                'panel_url' => '',
+                'iframe_url' => '',
+                'error' => '服务器不存在或已被删除',
+            ];
+        }
+
         $baseUrl = 'https://' . $server->hostname . ':' . $server->port;
         $panelUrl = '';
         $iframeUrl = '';
@@ -107,7 +117,7 @@ class Client extends \Api_Abstract
         $required = ['order_id' => 'Order ID is required'];
         $this->di['validator']->checkRequiredParamsForArray($required, $data);
 
-        $service = $this->getService()->getServiceLxdapiByOrderId((int)$data['order_id']);
+        [$order, $service] = $this->getOrderAndService((int)$data['order_id']);
 
         return $this->getService()->getTemplates($service);
     }

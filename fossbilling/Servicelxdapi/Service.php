@@ -1,13 +1,5 @@
 <?php
 
-/**
- * LXDAPI Server module for FOSSBilling
- *
- * @author  xkatld
- * @version 2.0.2
- * @link    https://github.com/xkatld/lxdapi-web-server
- */
-
 declare(strict_types=1);
 
 namespace Box\Mod\Servicelxdapi;
@@ -62,6 +54,7 @@ class Service implements \FOSSBilling\InjectionAwareInterface
                 `api_hash` VARCHAR(255) NOT NULL,
                 `ssl_verify` TINYINT(1) DEFAULT 0,
                 `active` TINYINT(1) DEFAULT 1,
+                `max_containers` INT(11) UNSIGNED DEFAULT 0,
                 `created_at` DATETIME DEFAULT NULL,
                 `updated_at` DATETIME DEFAULT NULL,
                 PRIMARY KEY (`id`),
@@ -71,9 +64,35 @@ class Service implements \FOSSBilling\InjectionAwareInterface
 
         $this->di['db']->exec($sql);
         
-        try {
-            $this->di['db']->exec("ALTER TABLE `service_lxdapi_server` ADD COLUMN `group_id` INT(11) UNSIGNED DEFAULT NULL AFTER `id`");
-        } catch (\Exception $e) {
+        $alterStatements = [
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `client_id` INT(11) UNSIGNED NOT NULL AFTER `id`",
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `order_id` INT(11) UNSIGNED NOT NULL AFTER `client_id`",
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `server_id` INT(11) UNSIGNED DEFAULT NULL AFTER `order_id`",
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `container_name` VARCHAR(255) DEFAULT NULL AFTER `server_id`",
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `password` VARCHAR(255) DEFAULT NULL AFTER `container_name`",
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `created_at` DATETIME DEFAULT NULL AFTER `password`",
+            "ALTER TABLE `service_lxdapi` ADD COLUMN `updated_at` DATETIME DEFAULT NULL AFTER `created_at`",
+            "ALTER TABLE `service_lxdapi_server_group` ADD COLUMN `name` VARCHAR(255) NOT NULL AFTER `id`",
+            "ALTER TABLE `service_lxdapi_server_group` ADD COLUMN `fill_type` ENUM('least', 'round', 'random') DEFAULT 'least' AFTER `name`",
+            "ALTER TABLE `service_lxdapi_server_group` ADD COLUMN `created_at` DATETIME DEFAULT NULL AFTER `fill_type`",
+            "ALTER TABLE `service_lxdapi_server_group` ADD COLUMN `updated_at` DATETIME DEFAULT NULL AFTER `created_at`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `group_id` INT(11) UNSIGNED DEFAULT NULL AFTER `id`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `name` VARCHAR(255) NOT NULL AFTER `group_id`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `hostname` VARCHAR(255) NOT NULL AFTER `name`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `port` INT(11) DEFAULT 8443 AFTER `hostname`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `api_hash` VARCHAR(255) NOT NULL AFTER `port`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `ssl_verify` TINYINT(1) DEFAULT 0 AFTER `api_hash`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `active` TINYINT(1) DEFAULT 1 AFTER `ssl_verify`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `max_containers` INT(11) UNSIGNED DEFAULT 0 AFTER `active`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `created_at` DATETIME DEFAULT NULL AFTER `max_containers`",
+            "ALTER TABLE `service_lxdapi_server` ADD COLUMN `updated_at` DATETIME DEFAULT NULL AFTER `created_at`",
+        ];
+        
+        foreach ($alterStatements as $stmt) {
+            try {
+                $this->di['db']->exec($stmt);
+            } catch (\Exception $e) {
+            }
         }
         
         return true;
@@ -83,6 +102,7 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     {
         $this->di['db']->exec("DROP TABLE IF EXISTS `service_lxdapi`");
         $this->di['db']->exec("DROP TABLE IF EXISTS `service_lxdapi_server`");
+        $this->di['db']->exec("DROP TABLE IF EXISTS `service_lxdapi_server_group`");
         return true;
     }
 
@@ -300,9 +320,21 @@ class Service implements \FOSSBilling\InjectionAwareInterface
 
     public function suspend($order, $model): bool
     {
+        if (!is_object($model) || !$model->server_id) {
+            return true;
+        }
+
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=pause';
-        $this->apiRequest($server, $endpoint, [], 'POST');
+        $response = $this->apiRequest($server, $endpoint, [], 'POST');
+
+        if ($response === null) {
+            throw new \Box_Exception('无法连接到服务器: ' . $server->hostname);
+        }
 
         $model->updated_at = date('Y-m-d H:i:s');
         $this->di['db']->store($model);
@@ -312,9 +344,21 @@ class Service implements \FOSSBilling\InjectionAwareInterface
 
     public function unsuspend($order, $model): bool
     {
+        if (!is_object($model) || !$model->server_id) {
+            return true;
+        }
+
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=resume';
-        $this->apiRequest($server, $endpoint, [], 'POST');
+        $response = $this->apiRequest($server, $endpoint, [], 'POST');
+
+        if ($response === null) {
+            throw new \Box_Exception('无法连接到服务器: ' . $server->hostname);
+        }
 
         $model->updated_at = date('Y-m-d H:i:s');
         $this->di['db']->store($model);
@@ -334,13 +378,19 @@ class Service implements \FOSSBilling\InjectionAwareInterface
 
     public function delete($order, $model): bool
     {
-        if (!is_object($model) || !$model->server_id) {
+        if (!is_object($model)) {
             return true;
         }
 
-        $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
-        $endpoint = '/api/system/containers/' . urlencode($model->container_name);
-        $this->apiRequest($server, $endpoint, [], 'DELETE');
+        if ($model->server_id) {
+            $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+            if ($server && $model->container_name) {
+                $endpoint = '/api/system/containers/' . urlencode($model->container_name);
+                $this->apiRequest($server, $endpoint, [], 'DELETE');
+            }
+        }
+
+        $this->di['db']->trash($model);
 
         return true;
     }
@@ -376,6 +426,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function vmStart($order, $model): bool
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=start';
         $response = $this->apiRequest($server, $endpoint, [], 'POST');
 
@@ -385,6 +439,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function vmStop($order, $model): bool
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=stop';
         $response = $this->apiRequest($server, $endpoint, [], 'POST');
 
@@ -394,6 +452,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function vmReboot($order, $model): bool
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=restart';
         $response = $this->apiRequest($server, $endpoint, [], 'POST');
 
@@ -407,6 +469,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
         }
 
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=reinstall';
         
         $requestData = ['image' => $image];
@@ -425,6 +491,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function vmResetPassword($order, $model, string $password): bool
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name) . '/action?action=reset-password';
         $response = $this->apiRequest($server, $endpoint, ['password' => $password], 'POST');
 
@@ -441,6 +511,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function vmInfo($order, $model): array
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            return ['status' => 'unknown', 'error' => '服务器不存在'];
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name);
         $response = $this->apiRequest($server, $endpoint, [], 'GET');
 
@@ -454,6 +528,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function getConsoleUrl($order, $model): string
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/console/create-token';
         $response = $this->apiRequest($server, $endpoint, ['hostname' => $model->container_name], 'POST');
 
@@ -467,6 +545,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function trafficReset($order, $model): bool
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            throw new \Box_Exception('服务器不存在或已被删除');
+        }
+
         $endpoint = '/api/system/traffic/reset?name=' . urlencode($model->container_name);
         $response = $this->apiRequest($server, $endpoint, [], 'POST');
 
@@ -476,6 +558,10 @@ class Service implements \FOSSBilling\InjectionAwareInterface
     public function getTemplates($model): array
     {
         $server = $this->di['db']->load('service_lxdapi_server', $model->server_id);
+        if (!$server) {
+            return [];
+        }
+
         $endpoint = '/api/system/containers/' . urlencode($model->container_name);
         
         $containerResponse = $this->apiRequest($server, $endpoint, [], 'GET');
