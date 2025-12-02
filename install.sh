@@ -319,14 +319,21 @@ create_zfs_storage_pool() {
     ok "创建 ZFS 存储池..."
     if [ -f "$loop_file" ]; then
         warn "检测到旧的循环文件，正在清理..."
+        zpool destroy lxd_zpool 2>/dev/null || true
         rm -f "$loop_file"
     fi
     ok "创建稀疏文件：$loop_file ${disk_nums}GB..."
     if ! create_sparse_file "$loop_file" "$disk_nums"; then
         return 1
     fi
+    ok "创建 ZFS 池..."
+    if ! zpool create -f lxd_zpool "$loop_file"; then
+        warn "ZFS 池创建失败"
+        rm -f "$loop_file"
+        return 1
+    fi
     echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
-    /snap/bin/lxc storage create default zfs source="$loop_file" 2>&1
+    /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
     return $?
 }
 
