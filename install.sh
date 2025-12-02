@@ -207,26 +207,24 @@ install_lxd() {
 }
 
 configure_resources() {
-    if [[ "$SYSTEM" == "Debian" ]]; then
-        while true; do
-            reading "请选择存储后端类型 lvm/btrfs [lvm]：" storage_backend
-            storage_backend=${storage_backend:-lvm}
-            if [[ "$storage_backend" =~ ^(lvm|btrfs)$ ]]; then
-                break
-            else
-                warn "请输入 lvm 或 btrfs"
-            fi
-        done
-    else
-        while true; do
-            reading "请选择存储后端类型 lvm/btrfs/zfs [lvm]：" storage_backend
-            storage_backend=${storage_backend:-lvm}
-            if [[ "$storage_backend" =~ ^(lvm|zfs|btrfs)$ ]]; then
-                break
-            else
-                warn "请输入 lvm、btrfs 或 zfs"
-            fi
-        done
+    while true; do
+        reading "请选择存储后端类型 lvm/btrfs/zfs [lvm]：" storage_backend
+        storage_backend=${storage_backend:-lvm}
+        if [[ "$storage_backend" =~ ^(lvm|zfs|btrfs)$ ]]; then
+            break
+        else
+            warn "请输入 lvm、btrfs 或 zfs"
+        fi
+    done
+    if [[ "$SYSTEM" == "Debian" && "$storage_backend" == "zfs" ]]; then
+        warn "Debian 系统需要从源码编译 ZFS，预计耗时 10-30 分钟"
+        reading "是否继续？(y/n) [n]：" confirm_zfs
+        confirm_zfs=${confirm_zfs:-n}
+        if [[ ! "$confirm_zfs" =~ ^[yY]$ ]]; then
+            info "已取消 ZFS，请重新选择存储后端"
+            configure_resources
+            return
+        fi
     fi
     while true; do
         reading "是否需要指定存储池的自定义路径？(y/n) [n]：" use_custom_path
@@ -406,8 +404,15 @@ init_storage_backend() {
             install_package lvm2
             ;;
         zfs)
-            install_package zfs-dkms
-            install_package zfsutils-linux
+            if [[ "$SYSTEM" == "Debian" ]]; then
+                info "Debian 系统开始编译安装 ZFS..."
+                if ! bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh); then
+                    err "ZFS 编译安装失败"
+                fi
+            else
+                install_package zfs-dkms
+                install_package zfsutils-linux
+            fi
             ;;
         btrfs)
             install_package btrfs-progs
