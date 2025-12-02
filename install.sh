@@ -207,15 +207,27 @@ install_lxd() {
 }
 
 configure_resources() {
-    while true; do
-        reading "请选择存储后端类型 lvm/btrfs/zfs [lvm]：" storage_backend
-        storage_backend=${storage_backend:-lvm}
-        if [[ "$storage_backend" =~ ^(lvm|zfs|btrfs)$ ]]; then
-            break
-        else
-            warn "请输入 lvm、btrfs 或 zfs"
-        fi
-    done
+    if [[ "$SYSTEM" == "Debian" ]]; then
+        while true; do
+            reading "请选择存储后端类型 lvm/btrfs [lvm]：" storage_backend
+            storage_backend=${storage_backend:-lvm}
+            if [[ "$storage_backend" =~ ^(lvm|btrfs)$ ]]; then
+                break
+            else
+                warn "请输入 lvm 或 btrfs"
+            fi
+        done
+    else
+        while true; do
+            reading "请选择存储后端类型 lvm/btrfs/zfs [lvm]：" storage_backend
+            storage_backend=${storage_backend:-lvm}
+            if [[ "$storage_backend" =~ ^(lvm|zfs|btrfs)$ ]]; then
+                break
+            else
+                warn "请输入 lvm、btrfs 或 zfs"
+            fi
+        done
+    fi
     while true; do
         reading "是否需要指定存储池的自定义路径？(y/n) [n]：" use_custom_path
         use_custom_path=${use_custom_path:-n}
@@ -299,10 +311,25 @@ create_lvm_storage_pool() {
     fi
     ok "设置循环设备..."
     loop_dev=$(losetup -f)
-    losetup "$loop_dev" "$loop_file"
+    if ! losetup "$loop_dev" "$loop_file"; then
+        warn "循环设备设置失败"
+        rm -f "$loop_file"
+        return 1
+    fi
     ok "创建 LVM 物理卷和卷组..."
-    pvcreate "$loop_dev" >/dev/null 2>&1
-    vgcreate lxd_vg "$loop_dev" >/dev/null 2>&1
+    if ! pvcreate "$loop_dev" >/dev/null 2>&1; then
+        warn "LVM 物理卷创建失败"
+        losetup -d "$loop_dev" 2>/dev/null
+        rm -f "$loop_file"
+        return 1
+    fi
+    if ! vgcreate lxd_vg "$loop_dev" >/dev/null 2>&1; then
+        warn "LVM 卷组创建失败"
+        pvremove "$loop_dev" 2>/dev/null
+        losetup -d "$loop_dev" 2>/dev/null
+        rm -f "$loop_file"
+        return 1
+    fi
     echo "$loop_file" > "$storage_path/lvm_loop_file.txt"
     /snap/bin/lxc storage create default lvm source=lxd_vg 2>&1
     return $?
@@ -324,7 +351,11 @@ create_zfs_storage_pool() {
         return 1
     fi
     ok "创建 ZFS 池..."
-    zpool create -f lxd_zpool "$loop_file" 2>/dev/null
+    if ! zpool create -f lxd_zpool "$loop_file" 2>/dev/null; then
+        warn "ZFS 池创建失败"
+        rm -f "$loop_file"
+        return 1
+    fi
     echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
     /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
     return $?
@@ -334,7 +365,7 @@ create_btrfs_storage_pool() {
     local storage_path="$1"
     local disk_nums="$2"
     local loop_file="$storage_path/btrfs_pool.img"
-    local mount_point="/var/lib/lxd/storage-pools/default"
+    local mount_point="$storage_path/default"
     
     ok "创建 Btrfs 存储池..."
     if [ -f "$loop_file" ]; then
@@ -349,11 +380,25 @@ create_btrfs_storage_pool() {
     fi
     ok "设置循环设备..."
     loop_dev=$(losetup -f)
-    losetup "$loop_dev" "$loop_file"
+    if ! losetup "$loop_dev" "$loop_file"; then
+        warn "循环设备设置失败"
+        rm -f "$loop_file"
+        return 1
+    fi
     ok "格式化为 Btrfs..."
-    mkfs.btrfs -f "$loop_dev" >/dev/null 2>&1
+    if ! mkfs.btrfs -f "$loop_dev" >/dev/null 2>&1; then
+        warn "Btrfs 格式化失败"
+        losetup -d "$loop_dev" 2>/dev/null
+        rm -f "$loop_file"
+        return 1
+    fi
     mkdir -p "$mount_point"
-    mount "$loop_dev" "$mount_point"
+    if ! mount "$loop_dev" "$mount_point"; then
+        warn "挂载失败"
+        losetup -d "$loop_dev" 2>/dev/null
+        rm -f "$loop_file"
+        return 1
+    fi
     echo "$loop_file" > "$storage_path/btrfs_loop_file.txt"
     echo "$loop_dev $mount_point btrfs defaults 0 0" >> /etc/fstab
     /snap/bin/lxc storage create default btrfs source="$mount_point" 2>&1
