@@ -301,7 +301,6 @@ create_lvm_storage_pool() {
     ok "创建 LVM 存储池..."
     if [ -f "$loop_file" ]; then
         warn "检测到旧的循环文件，正在清理..."
-        vgremove -f lxd_vg 2>/dev/null || true
         losetup -d $(losetup -j "$loop_file" | cut -d: -f1) 2>/dev/null || true
         rm -f "$loop_file"
     fi
@@ -309,29 +308,8 @@ create_lvm_storage_pool() {
     if ! create_sparse_file "$loop_file" "$disk_nums"; then
         return 1
     fi
-    ok "设置循环设备..."
-    loop_dev=$(losetup -f)
-    if ! losetup "$loop_dev" "$loop_file"; then
-        warn "循环设备设置失败"
-        rm -f "$loop_file"
-        return 1
-    fi
-    ok "创建 LVM 物理卷和卷组..."
-    if ! pvcreate "$loop_dev" >/dev/null 2>&1; then
-        warn "LVM 物理卷创建失败"
-        losetup -d "$loop_dev" 2>/dev/null
-        rm -f "$loop_file"
-        return 1
-    fi
-    if ! vgcreate lxd_vg "$loop_dev" >/dev/null 2>&1; then
-        warn "LVM 卷组创建失败"
-        pvremove "$loop_dev" 2>/dev/null
-        losetup -d "$loop_dev" 2>/dev/null
-        rm -f "$loop_file"
-        return 1
-    fi
     echo "$loop_file" > "$storage_path/lvm_loop_file.txt"
-    /snap/bin/lxc storage create default lvm source=lxd_vg 2>&1
+    /snap/bin/lxc storage create default lvm source="$loop_file" 2>&1
     return $?
 }
 
@@ -343,21 +321,14 @@ create_zfs_storage_pool() {
     ok "创建 ZFS 存储池..."
     if [ -f "$loop_file" ]; then
         warn "检测到旧的循环文件，正在清理..."
-        zpool destroy lxd_zpool 2>/dev/null || true
         rm -f "$loop_file"
     fi
     ok "创建稀疏文件：$loop_file ${disk_nums}GB..."
     if ! create_sparse_file "$loop_file" "$disk_nums"; then
         return 1
     fi
-    ok "创建 ZFS 池..."
-    if ! zpool create -f lxd_zpool "$loop_file" 2>/dev/null; then
-        warn "ZFS 池创建失败"
-        rm -f "$loop_file"
-        return 1
-    fi
     echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
-    /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
+    /snap/bin/lxc storage create default zfs source="$loop_file" 2>&1
     return $?
 }
 
@@ -365,12 +336,10 @@ create_btrfs_storage_pool() {
     local storage_path="$1"
     local disk_nums="$2"
     local loop_file="$storage_path/btrfs_pool.img"
-    local mount_point="$storage_path/default"
     
     ok "创建 Btrfs 存储池..."
     if [ -f "$loop_file" ]; then
         warn "检测到旧的循环文件，正在清理..."
-        umount "$mount_point" 2>/dev/null || true
         losetup -d $(losetup -j "$loop_file" | cut -d: -f1) 2>/dev/null || true
         rm -f "$loop_file"
     fi
@@ -378,30 +347,8 @@ create_btrfs_storage_pool() {
     if ! create_sparse_file "$loop_file" "$disk_nums"; then
         return 1
     fi
-    ok "设置循环设备..."
-    loop_dev=$(losetup -f)
-    if ! losetup "$loop_dev" "$loop_file"; then
-        warn "循环设备设置失败"
-        rm -f "$loop_file"
-        return 1
-    fi
-    ok "格式化为 Btrfs..."
-    if ! mkfs.btrfs -f "$loop_dev" >/dev/null 2>&1; then
-        warn "Btrfs 格式化失败"
-        losetup -d "$loop_dev" 2>/dev/null
-        rm -f "$loop_file"
-        return 1
-    fi
-    mkdir -p "$mount_point"
-    if ! mount "$loop_dev" "$mount_point"; then
-        warn "挂载失败"
-        losetup -d "$loop_dev" 2>/dev/null
-        rm -f "$loop_file"
-        return 1
-    fi
     echo "$loop_file" > "$storage_path/btrfs_loop_file.txt"
-    echo "$loop_dev $mount_point btrfs defaults 0 0" >> /etc/fstab
-    /snap/bin/lxc storage create default btrfs source="$mount_point" 2>&1
+    /snap/bin/lxc storage create default btrfs source="$loop_file" 2>&1
     return $?
 }
 
