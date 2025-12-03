@@ -337,6 +337,18 @@ create_zfs_storage_pool() {
     ok "配置 ZFS 池开机自动导入..."
     zpool set cachefile=/etc/zfs/zpool.cache lxd_zpool 2>/dev/null || true
     
+    local zpool_path=$(which zpool 2>/dev/null || echo "/usr/local/sbin/zpool")
+    
+    cat > /usr/local/bin/zpool-import-lxd.sh << EOF
+#!/bin/bash
+LOOP_FILE="${loop_file}"
+POOL_DIR=\$(dirname "\$LOOP_FILE")
+ZPOOL="${zpool_path}"
+\$ZPOOL list lxd_zpool >/dev/null 2>&1 && exit 0
+[ -f "\$LOOP_FILE" ] && \$ZPOOL import -d "\$POOL_DIR" -f lxd_zpool || exit 1
+EOF
+    chmod +x /usr/local/bin/zpool-import-lxd.sh
+    
     cat > /etc/systemd/system/zpool-import-lxd.service << 'EOF'
 [Unit]
 Description=Import LXD ZFS Pool
@@ -345,7 +357,7 @@ After=zfs-import.target local-fs.target
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/zpool import -f lxd_zpool
+ExecStart=/usr/local/bin/zpool-import-lxd.sh
 RemainAfterExit=yes
 
 [Install]
