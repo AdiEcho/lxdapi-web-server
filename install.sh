@@ -333,6 +333,29 @@ create_zfs_storage_pool() {
         return 1
     fi
     echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
+    
+    ok "配置 ZFS 池开机自动导入..."
+    zpool set cachefile=/etc/zfs/zpool.cache lxd_zpool 2>/dev/null || true
+    
+    cat > /etc/systemd/system/zpool-import-lxd.service << 'EOF'
+[Unit]
+Description=Import LXD ZFS Pool
+Before=snap.lxd.daemon.service
+After=zfs-import.target local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/zpool import -f lxd_zpool
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable zpool-import-lxd.service 2>/dev/null
+    ok "ZFS 池开机自动导入服务已配置"
+    
     /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
     return $?
 }
