@@ -237,8 +237,8 @@ configure_resources() {
     done
     if [[ "$use_custom_path" =~ ^[yY]$ ]]; then
         while true; do
-            reading "请输入自定义存储路径 [/var/lib/lxd/storage-pools]：" storage_path
-            storage_path=${storage_path:-/var/lib/lxd/storage-pools}
+            reading "请输入自定义存储路径 [/opt/disk]：" storage_path
+            storage_path=${storage_path:-/opt/disk}
             if [[ -n "$storage_path" && "$storage_path" =~ ^/.+ ]]; then
                 if [ ! -d "$storage_path" ]; then
                     mkdir -p "$storage_path" 2>/dev/null
@@ -317,35 +317,80 @@ create_zfs_storage_pool() {
     local loop_file="$storage_path/zfs_pool.img"
     
     ok "创建 ZFS 存储池..."
-    if [ -f "$loop_file" ]; then
-        warn "检测到旧的循环文件，正在清理..."
+    
+    # 清理旧的 LXD 存储池
+    if /snap/bin/lxc storage show default >/dev/null 2>&1; then
+        warn "检测到旧的 LXD 存储池，正在清理..."
+        for container in $(/snap/bin/lxc list -c n --format csv 2>/dev/null); do
+            /snap/bin/lxc stop "$container" --force 2>/dev/null
+            /snap/bin/lxc delete "$container" --force 2>/dev/null
+        done
+        for image in $(/snap/bin/lxc image list -c f --format csv 2>/dev/null); do
+            /snap/bin/lxc image delete "$image" 2>/dev/null
+        done
+        /snap/bin/lxc storage delete default 2>/dev/null || true
+    fi
+    
+    # 清理旧的 zpool
+    if zpool list lxd_zpool >/dev/null 2>&1; then
+        warn "检测到旧的 ZFS 池，正在清理..."
         zpool destroy lxd_zpool 2>/dev/null || true
+    fi
+    
+    # 清理旧文件
+    if [ -f "$loop_file" ]; then
         rm -f "$loop_file"
     fi
+    
+    # 创建存储目录
+    mkdir -p "$storage_path"
+    
+    # 创建稀疏文件
     ok "创建稀疏文件：$loop_file ${disk_nums}GB..."
-    if ! create_sparse_file "$loop_file" "$disk_nums"; then
+    if ! dd if=/dev/zero of="$loop_file" bs=1G count=0 seek="${disk_nums}" 2>/dev/null; then
+        err "创建稀疏文件失败"
         return 1
     fi
+    
+    # 创建 loop 设备
+    ok "创建 loop 设备..."
+    local loop_dev=$(losetup -f --show "$loop_file")
+    if [ -z "$loop_dev" ]; then
+        err "创建 loop 设备失败"
+        return 1
+    fi
+    ok "Loop 设备: $loop_dev"
+    
+    # 创建 ZFS 池（使用 loop 设备而不是文件）
     ok "创建 ZFS 池..."
-    if ! zpool create -f lxd_zpool "$loop_file"; then
+    if ! zpool create -f lxd_zpool "$loop_dev"; then
         warn "ZFS 池创建失败"
+        losetup -d "$loop_dev" 2>/dev/null
         rm -f "$loop_file"
         return 1
     fi
+    
+    # 保存配置
     echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
+    echo "$loop_dev" > "$storage_path/zfs_loop_device.txt"
     
-    ok "配置 ZFS 池开机自动导入..."
-    zpool set cachefile=/etc/zfs/zpool.cache lxd_zpool 2>/dev/null || true
-    
-    local zpool_path=$(which zpool 2>/dev/null || echo "/usr/local/sbin/zpool")
-    
+    # 配置开机自动恢复 loop 设备和导入 zpool
+    ok "配置开机自动导入..."
     cat > /usr/local/bin/zpool-import-lxd.sh << EOF
 #!/bin/bash
-LOOP_FILE="${loop_file}"
-POOL_DIR=\$(dirname "\$LOOP_FILE")
-ZPOOL="${zpool_path}"
-\$ZPOOL list lxd_zpool >/dev/null 2>&1 && exit 0
-[ -f "\$LOOP_FILE" ] && \$ZPOOL import -d "\$POOL_DIR" -f lxd_zpool || exit 1
+LOOP_FILE="$loop_file"
+
+# 检查 zpool 是否已导入
+zpool list lxd_zpool >/dev/null 2>&1 && exit 0
+
+# 创建 loop 设备
+LOOP_DEV=\$(losetup -f --show "\$LOOP_FILE" 2>/dev/null)
+if [ -z "\$LOOP_DEV" ]; then
+    exit 1
+fi
+
+# 导入 zpool
+zpool import -d /dev lxd_zpool 2>/dev/null || zpool import -f lxd_zpool 2>/dev/null
 EOF
     chmod +x /usr/local/bin/zpool-import-lxd.sh
     
@@ -353,7 +398,7 @@ EOF
 [Unit]
 Description=Import LXD ZFS Pool
 Before=snap.lxd.daemon.service
-After=zfs-import.target local-fs.target
+After=local-fs.target
 
 [Service]
 Type=oneshot
@@ -366,8 +411,9 @@ EOF
     
     systemctl daemon-reload
     systemctl enable zpool-import-lxd.service 2>/dev/null
-    ok "ZFS 池开机自动导入服务已配置"
+    ok "开机自动导入服务已配置"
     
+    # 创建 LXD 存储池
     /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
     return $?
 }
@@ -446,7 +492,9 @@ init_storage_backend() {
             install_package lvm2
             ;;
         zfs)
-            if [[ "$SYSTEM" == "Debian" ]]; then
+            if command -v zfs >/dev/null 2>&1 && command -v zpool >/dev/null 2>&1; then
+                ok "ZFS 已安装，跳过安装步骤"
+            elif [[ "$SYSTEM" == "Debian" ]]; then
                 info "Debian 系统开始编译安装 ZFS..."
                 if ! bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh); then
                     err "ZFS 编译安装失败"
@@ -455,6 +503,12 @@ init_storage_backend() {
                 install_package zfs-dkms
                 install_package zfsutils-linux
             fi
+            # 让 LXD 使用系统的 ZFS 工具（解决 ZFS 2.3.0 兼容性问题）
+            info "配置 LXD 使用系统 ZFS 工具..."
+            snap set lxd zfs.external=true 2>/dev/null
+            snap restart lxd 2>/dev/null
+            sleep 3
+            ok "LXD ZFS 外部工具模式已启用"
             ;;
         btrfs)
             install_package btrfs-progs
