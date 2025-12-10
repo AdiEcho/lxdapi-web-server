@@ -318,7 +318,6 @@ create_zfs_storage_pool() {
     
     ok "创建 ZFS 存储池..."
     
-    # 清理旧的 LXD 存储池
     if /snap/bin/lxc storage show default >/dev/null 2>&1; then
         warn "检测到旧的 LXD 存储池，正在清理..."
         for container in $(/snap/bin/lxc list -c n --format csv 2>/dev/null); do
@@ -331,28 +330,23 @@ create_zfs_storage_pool() {
         /snap/bin/lxc storage delete default 2>/dev/null || true
     fi
     
-    # 清理旧的 zpool
     if zpool list lxd_zpool >/dev/null 2>&1; then
         warn "检测到旧的 ZFS 池，正在清理..."
         zpool destroy lxd_zpool 2>/dev/null || true
     fi
     
-    # 清理旧文件
     if [ -f "$loop_file" ]; then
         rm -f "$loop_file"
     fi
     
-    # 创建存储目录
     mkdir -p "$storage_path"
     
-    # 创建稀疏文件
     ok "创建稀疏文件：$loop_file ${disk_nums}GB..."
     if ! dd if=/dev/zero of="$loop_file" bs=1G count=0 seek="${disk_nums}" 2>/dev/null; then
         err "创建稀疏文件失败"
         return 1
     fi
     
-    # 创建 loop 设备
     ok "创建 loop 设备..."
     local loop_dev=$(losetup -f --show "$loop_file")
     if [ -z "$loop_dev" ]; then
@@ -361,7 +355,6 @@ create_zfs_storage_pool() {
     fi
     ok "Loop 设备: $loop_dev"
     
-    # 创建 ZFS 池（使用 loop 设备而不是文件）
     ok "创建 ZFS 池..."
     if ! zpool create -f lxd_zpool "$loop_dev"; then
         warn "ZFS 池创建失败"
@@ -370,26 +363,21 @@ create_zfs_storage_pool() {
         return 1
     fi
     
-    # 保存配置
     echo "$loop_file" > "$storage_path/zfs_loop_file.txt"
     echo "$loop_dev" > "$storage_path/zfs_loop_device.txt"
     
-    # 配置开机自动恢复 loop 设备和导入 zpool
     ok "配置开机自动导入..."
     cat > /usr/local/bin/zpool-import-lxd.sh << EOF
 #!/bin/bash
 LOOP_FILE="$loop_file"
 
-# 检查 zpool 是否已导入
 zpool list lxd_zpool >/dev/null 2>&1 && exit 0
 
-# 创建 loop 设备
 LOOP_DEV=\$(losetup -f --show "\$LOOP_FILE" 2>/dev/null)
 if [ -z "\$LOOP_DEV" ]; then
     exit 1
 fi
 
-# 导入 zpool
 zpool import -d /dev lxd_zpool 2>/dev/null || zpool import -f lxd_zpool 2>/dev/null
 EOF
     chmod +x /usr/local/bin/zpool-import-lxd.sh
@@ -413,7 +401,6 @@ EOF
     systemctl enable zpool-import-lxd.service 2>/dev/null
     ok "开机自动导入服务已配置"
     
-    # 创建 LXD 存储池
     /snap/bin/lxc storage create default zfs source=lxd_zpool 2>&1
     return $?
 }
@@ -503,7 +490,6 @@ init_storage_backend() {
                 install_package zfs-dkms
                 install_package zfsutils-linux
             fi
-            # 让 LXD 使用系统的 ZFS 工具（解决 ZFS 2.3.0 兼容性问题）
             info "配置 LXD 使用系统 ZFS 工具..."
             snap set lxd zfs.external=true 2>/dev/null
             snap restart lxd 2>/dev/null
@@ -663,8 +649,25 @@ deploy_lxdapi() {
             ;;
     esac
     
+    while true; do
+        reading "请选择下载源 github/gitee [github]：" download_source
+        download_source=${download_source:-github}
+        if [[ "$download_source" =~ ^(github|gitee)$ ]]; then
+            break
+        else
+            warn "请输入 github 或 gitee"
+        fi
+    done
+    
     info "获取最新版本..."
-    latest_tag=$(curl -s https://api.github.com/repos/xkatld/lxdapi-web-server/releases/latest | grep '"tag_name"' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+    
+    if [[ "$download_source" == "github" ]]; then
+        latest_tag=$(curl -s https://api.github.com/repos/xkatld/lxdapi-web-server/releases/latest | grep '"tag_name"' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+        base_url="https://github.com/xkatld/lxdapi-web-server/releases/download"
+    else
+        latest_tag=$(curl -s https://gitee.com/api/v5/repos/xkatld/lxdapi-web-server/releases/latest | grep '"tag_name"' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+        base_url="https://gitee.com/xkatld/lxdapi-web-server/releases/download"
+    fi
     
     if [ -z "$latest_tag" ]; then
         err "无法获取最新版本信息"
@@ -672,7 +675,7 @@ deploy_lxdapi() {
     
     ok "最新版本: $latest_tag"
     
-    download_url="https://github.com/xkatld/lxdapi-web-server/releases/download/${latest_tag}/lxdapi-linux-${arch}.tar.gz"
+    download_url="${base_url}/${latest_tag}/lxdapi-linux-${arch}.tar.gz"
     
     info "下载 lxdapi..."
     info "下载地址: $download_url"
@@ -976,27 +979,58 @@ EOF
 
 main() {
     print_step "1" "5" "初始化环境"
-    set_locale
-    install_base_packages
-    ok "环境初始化完成"
+    reading "是否执行环境初始化？(y/n) [y]：" step1_confirm
+    step1_confirm=${step1_confirm:-y}
+    if [[ "$step1_confirm" =~ ^[yY]$ ]]; then
+        set_locale
+        install_base_packages
+        ok "环境初始化完成"
+    else
+        info "已跳过环境初始化"
+    fi
 
     print_step "2" "5" "安装 LXD"
-    install_lxd
+    reading "是否执行 LXD 安装？(y/n) [y]：" step2_confirm
+    step2_confirm=${step2_confirm:-y}
+    if [[ "$step2_confirm" =~ ^[yY]$ ]]; then
+        install_lxd
+        ok "LXD 安装完成"
+    else
+        info "已跳过 LXD 安装"
+    fi
 
     print_step "3" "5" "配置存储资源"
-    configure_resources
-    setup_storage
-    ok "存储配置完成"
+    reading "是否执行存储配置？(y/n) [y]：" step3_confirm
+    step3_confirm=${step3_confirm:-y}
+    if [[ "$step3_confirm" =~ ^[yY]$ ]]; then
+        configure_resources
+        setup_storage
+        ok "存储配置完成"
+    else
+        info "已跳过存储配置"
+    fi
 
     print_step "4" "5" "导入容器镜像"
-    import_container_images
-    ok "镜像导入完成"
+    reading "是否执行镜像导入？(y/n) [y]：" step4_confirm
+    step4_confirm=${step4_confirm:-y}
+    if [[ "$step4_confirm" =~ ^[yY]$ ]]; then
+        import_container_images
+        ok "镜像导入完成"
+    else
+        info "已跳过镜像导入"
+    fi
 
     print_step "5" "5" "部署 lxdapi"
-    deploy_lxdapi
-    configure_lxdapi
-    setup_lxdapi_service
-    ok "lxdapi 部署完成"
+    reading "是否执行 lxdapi 部署？(y/n) [y]：" step5_confirm
+    step5_confirm=${step5_confirm:-y}
+    if [[ "$step5_confirm" =~ ^[yY]$ ]]; then
+        deploy_lxdapi
+        configure_lxdapi
+        setup_lxdapi_service
+        ok "lxdapi 部署完成"
+    else
+        info "已跳过 lxdapi 部署"
+    fi
 
     echo
     echo "========================================"
