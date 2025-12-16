@@ -209,6 +209,12 @@ install_lxd() {
 
 setup_storage() {
     bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/storage_pool.sh)
+    
+    if ! /snap/bin/lxc network show lxdbr0 &>/dev/null; then
+        info "创建默认网络 lxdbr0..."
+        /snap/bin/lxc network create lxdbr0
+        ok "网络 lxdbr0 创建成功"
+    fi
 }
 
 import_container_images() {
