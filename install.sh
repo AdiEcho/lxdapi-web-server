@@ -209,11 +209,15 @@ install_lxd() {
 
 setup_storage() {
     bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/storage_pool.sh)
-    
+}
+
+init_lxd_network() {
     if ! /snap/bin/lxc network show lxdbr0 &>/dev/null; then
         info "创建默认网络 lxdbr0..."
         /snap/bin/lxc network create lxdbr0
         ok "网络 lxdbr0 创建成功"
+    else
+        ok "网络 lxdbr0 已存在"
     fi
 }
 
@@ -589,6 +593,7 @@ main() {
     step2_confirm=${step2_confirm:-y}
     if [[ "$step2_confirm" =~ ^[yY]$ ]]; then
         install_lxd
+        init_lxd_network
         ok "LXD 安装完成"
     else
         info "已跳过 LXD 安装"
