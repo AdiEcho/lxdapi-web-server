@@ -1,5 +1,11 @@
 #!/bin/bash
 
+echo "========================================"
+echo "    ZFS 编译安装脚本 (Debian)"
+echo "    LXDAPI by Github-xkatld"
+echo "========================================"
+echo
+
 LOG_DIR="/var/log/zfs_build_logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/zfs_build_$(date +%Y%m%d_%H%M%S).log"

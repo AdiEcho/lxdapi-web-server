@@ -203,7 +203,8 @@ rollback() {
 main() {
     echo
     echo "========================================"
-    echo "        lxdapi 更新脚本"
+    echo "        LXDAPI 更新脚本"
+    echo "        by Github-xkatld"
     echo "========================================"
     echo
     
