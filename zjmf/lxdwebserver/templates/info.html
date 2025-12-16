@@ -1,0 +1,49 @@
+<div class="container-fluid">
+    <div class="card shadow mb-3">
+        <div class="card-header py-2">
+            <h6 class="m-0 font-weight-bold text-primary">
+                <i class="fas fa-user mr-2"></i>用户中心
+            </h6>
+        </div>
+        <div class="card-body py-3">
+            {if $error_msg}
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> {$error_msg}
+            </div>
+            {elseif $jump_url}
+            <div class="d-flex align-items-center">
+                <a href="{$jump_url}" 
+                   target="_blank" 
+                   class="btn btn-primary px-4">
+                    <i class="fas fa-external-link-alt mr-2"></i>进入用户中心
+                </a>
+                <span class="ml-3 text-muted" style="font-size: 13px;">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    点击按钮将在新窗口打开用户管理中心，可在其中创建和管理容器。
+                </span>
+            </div>
+            {/if}
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    border: none;
+}
+.card-header {
+    background-color: #f8f9fc;
+    border-bottom: 1px solid #e3e6f0;
+}
+.btn-primary {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    transition: all 0.3s ease;
+}
+.btn-primary:hover {
+    background-color: #1d4ed8;
+    border-color: #1d4ed8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+</style>
