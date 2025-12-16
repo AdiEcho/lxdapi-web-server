@@ -138,6 +138,7 @@ install_base_packages() {
     install_package sudo
     install_package unzip
     install_package iptables-persistent
+    install_package nftables
     install_package nginx
     
     if dpkg -l lxcfs 2>/dev/null | grep -q "^ii"; then

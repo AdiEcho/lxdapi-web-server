@@ -32,6 +32,13 @@ check_environment() {
         err "未检测到配置文件: $CONFIG_FILE"
     fi
     
+    if ! command -v nft &>/dev/null; then
+        info "安装 nftables..."
+        apt-get update >/dev/null 2>&1
+        apt-get install -y nftables >/dev/null 2>&1
+        ok "nftables 已安装"
+    fi
+    
     ok "环境检测通过"
 }
 
