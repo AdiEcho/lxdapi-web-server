@@ -219,6 +219,12 @@ init_lxd_network() {
     else
         ok "网络 lxdbr0 已存在"
     fi
+    
+    if ! /snap/bin/lxc profile device show default 2>/dev/null | grep -q "eth0"; then
+        info "配置 default profile 网络设备..."
+        /snap/bin/lxc profile device add default eth0 nic network=lxdbr0 name=eth0
+        ok "网络设备已添加到 default profile"
+    fi
 }
 
 import_container_images() {
