@@ -26,6 +26,32 @@ if [[ "$SYSTEM" != "Debian" && "$SYSTEM" != "Ubuntu" ]]; then
     exit 1
 fi
 
+# 获取系统版本号
+if [[ "$SYSTEM" == "Debian" ]]; then
+    OS_VERSION=$(cat /etc/debian_version | cut -d. -f1)
+elif [[ "$SYSTEM" == "Ubuntu" ]]; then
+    OS_VERSION=$(grep VERSION_ID /etc/os-release | cut -d'"' -f2 | cut -d. -f1)
+fi
+
+# 检查推荐版本
+RECOMMENDED=false
+if [[ "$SYSTEM" == "Debian" && ("$OS_VERSION" == "12" || "$OS_VERSION" == "13") ]]; then
+    RECOMMENDED=true
+elif [[ "$SYSTEM" == "Ubuntu" && ("$OS_VERSION" == "24" || "$OS_VERSION" == "25") ]]; then
+    RECOMMENDED=true
+fi
+
+if [[ "$RECOMMENDED" != "true" ]]; then
+    echo -e "${YELLOW}[WARN]${NC} 当前系统: $SYSTEM $OS_VERSION"
+    echo -e "${YELLOW}[WARN]${NC} 推荐使用: Debian 12/13 或 Ubuntu 24/25"
+    read -rp "$(echo -e "${YELLOW}是否继续安装？(y/n) [n]：${NC}")" confirm_install
+    confirm_install=${confirm_install:-n}
+    if [[ ! "$confirm_install" =~ ^[yY]$ ]]; then
+        echo -e "${RED}[ERR]${NC} 安装已取消"
+        exit 1
+    fi
+fi
+
 
 if [ ! -d "/usr/local/bin" ]; then
     mkdir -p /usr/local/bin
@@ -208,7 +234,62 @@ install_lxd() {
 }
 
 setup_storage() {
-    bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/storage_pool.sh)
+    info "配置存储池..."
+    
+    if /snap/bin/lxc storage show default &>/dev/null; then
+        ok "存储池 default 已存在"
+        /snap/bin/lxc storage list
+        return 0
+    fi
+    
+    available_space=$(get_available_space)
+    info "当前可用磁盘空间: ${available_space}GB"
+    
+    while true; do
+        reading "请选择存储后端 zfs/btrfs/lvm [zfs]：" storage_driver
+        storage_driver=${storage_driver:-zfs}
+        if [[ "$storage_driver" =~ ^(zfs|btrfs|lvm)$ ]]; then
+            break
+        else
+            warn "请输入 zfs、btrfs 或 lvm"
+        fi
+    done
+    
+    # 安装存储后端依赖
+    case "$storage_driver" in
+        zfs)
+            if ! command -v zpool &>/dev/null; then
+                info "安装 ZFS..."
+                if [[ "$SYSTEM" == "Ubuntu" ]]; then
+                    install_package zfsutils-linux
+                else
+                    bash /root/lxdapi-n/build_zfs_on_debian.sh || bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh)
+                fi
+            fi
+            ;;
+        btrfs)
+            install_package btrfs-progs
+            ;;
+        lvm)
+            install_package lvm2
+            ;;
+    esac
+    
+    reading "请输入存储池大小(GB) [${available_space}]：" pool_size
+    pool_size=${pool_size:-$available_space}
+    
+    info "创建 default 存储池 (${storage_driver}, ${pool_size}GB)..."
+    /snap/bin/lxc storage create default ${storage_driver} size=${pool_size}GB
+    
+    if [ $? -eq 0 ]; then
+        ok "存储池 default 创建成功"
+        if ! /snap/bin/lxc profile device show default 2>/dev/null | grep -q "root"; then
+            /snap/bin/lxc profile device add default root disk path=/ pool=default
+            ok "存储池已添加到 default profile"
+        fi
+    else
+        err "存储池创建失败"
+    fi
 }
 
 init_lxd_network() {
