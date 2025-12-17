@@ -256,10 +256,12 @@ menu_disk() {
     echo
     reading "请选择 [0-3]: " choice
     
+    local default_pool=$(get_available_pool_name)
+    
     case "$choice" in
         1|2|3)
-            reading "存储池名称 [pool1]: " pool_name
-            pool_name=${pool_name:-pool1}
+            reading "存储池名称 [$default_pool]: " pool_name
+            pool_name=${pool_name:-$default_pool}
             reading "设备路径: " device
             [ -z "$device" ] && { warn "设备路径不能为空"; return; }
             
