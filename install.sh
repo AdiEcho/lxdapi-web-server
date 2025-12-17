@@ -664,7 +664,7 @@ main() {
     echo "        by Github-xkatld"
     echo "========================================"
     echo
-    print_step "1" "5" "初始化环境"
+    print_step "1" "4" "初始化环境"
     reading "是否执行环境初始化？(y/n) [y]：" step1_confirm
     step1_confirm=${step1_confirm:-y}
     if [[ "$step1_confirm" =~ ^[yY]$ ]]; then
@@ -675,7 +675,7 @@ main() {
         info "已跳过环境初始化"
     fi
 
-    print_step "2" "5" "安装 LXD"
+    print_step "2" "4" "安装 LXD"
     reading "是否执行 LXD 安装？(y/n) [y]：" step2_confirm
     step2_confirm=${step2_confirm:-y}
     if [[ "$step2_confirm" =~ ^[yY]$ ]]; then
@@ -686,7 +686,7 @@ main() {
         info "已跳过 LXD 安装"
     fi
 
-    print_step "3" "5" "配置存储资源"
+    print_step "3" "4" "配置存储资源"
     reading "是否执行存储配置？(y/n) [y]：" step3_confirm
     step3_confirm=${step3_confirm:-y}
     if [[ "$step3_confirm" =~ ^[yY]$ ]]; then
@@ -696,17 +696,7 @@ main() {
         info "已跳过存储配置"
     fi
 
-    print_step "4" "5" "导入容器镜像"
-    reading "是否执行镜像导入？(y/n) [y]：" step4_confirm
-    step4_confirm=${step4_confirm:-y}
-    if [[ "$step4_confirm" =~ ^[yY]$ ]]; then
-        import_container_images
-        ok "镜像导入完成"
-    else
-        info "已跳过镜像导入"
-    fi
-
-    print_step "5" "5" "部署 lxdapi"
+    print_step "4" "4" "部署 lxdapi"
     reading "是否执行 lxdapi 部署？(y/n) [y]：" step5_confirm
     step5_confirm=${step5_confirm:-y}
     if [[ "$step5_confirm" =~ ^[yY]$ ]]; then
@@ -736,11 +726,7 @@ main() {
     lxc storage list
     echo
     
-    info "===== 3. 镜像配置 ====="
-    lxc image list
-    echo
-    
-    info "===== 4. 后端配置 ====="
+    info "===== 3. 后端配置 ====="
     info "服务端口: $server_port"
     info "API密钥: $api_hash"
     info "流量间隔: $traffic_interval 秒"
