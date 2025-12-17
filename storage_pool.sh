@@ -76,11 +76,24 @@ install_package() {
 }
 
 list_disks() {
-    info "可用磁盘列表："
-    lsblk -d -o NAME,SIZE,TYPE,MODEL | grep -E "disk|NAME"
+    info "可用块设备 (>10GB)："
     echo
-    info "可用分区列表："
-    lsblk -o NAME,SIZE,TYPE,MOUNTPOINT | grep -E "part|NAME"
+    lsblk -d -n -o NAME,SIZE,TYPE | while read name size type; do
+        if [[ "$type" == "disk" ]]; then
+            # 转换大小为GB数值
+            size_num=$(echo "$size" | sed 's/[^0-9.]//g')
+            size_unit=$(echo "$size" | sed 's/[0-9.]//g')
+            case "$size_unit" in
+                T) size_gb=$(echo "$size_num * 1024" | bc 2>/dev/null || echo "1000") ;;
+                G) size_gb=$size_num ;;
+                *) size_gb=0 ;;
+            esac
+            if (( $(echo "$size_gb > 10" | bc -l 2>/dev/null || echo 0) )); then
+                echo "  /dev/$name  ($size)"
+            fi
+        fi
+    done
+    echo
 }
 
 create_native_auto() {
