@@ -121,6 +121,49 @@ backup_files() {
     fi
 }
 
+fix_service_file() {
+    info "检查服务文件..."
+    
+    SERVICE_FILE="/etc/systemd/system/lxdapi.service"
+    
+    if [ ! -f "$SERVICE_FILE" ]; then
+        warn "服务文件不存在，跳过修复"
+        return
+    fi
+    
+    if grep -q "Environment=\"PATH=" "$SERVICE_FILE"; then
+        ok "服务文件PATH配置正常"
+        return
+    fi
+    
+    info "修复服务文件PATH配置..."
+    
+    EXEC_BIN="$INSTALL_DIR/lxdapi-$ARCH"
+    
+    cat > "$SERVICE_FILE" << EOF
+[Unit]
+Description=LXD API Server
+After=network.target lxd.service
+Wants=lxd.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lxdapi
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+ExecStart=$EXEC_BIN
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    ok "服务文件已修复"
+}
+
 download_latest() {
     info "下载最新版本..."
     
@@ -232,6 +275,7 @@ main() {
     echo
     stop_service
     backup_files
+    fix_service_file
     
     if download_latest; then
         start_service

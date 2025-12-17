@@ -622,6 +622,7 @@ Wants=lxd.service
 Type=simple
 User=root
 WorkingDirectory=/opt/lxdapi
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
 ExecStart=$exec_bin
 Restart=always
 RestartSec=5
