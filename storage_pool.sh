@@ -67,6 +67,18 @@ check_lxd() {
     fi
 }
 
+get_available_space() {
+    df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}'
+}
+
+get_available_pool_name() {
+    local i=1
+    while lxc storage show "pool${i}" &>/dev/null; do
+        ((i++))
+    done
+    echo "pool${i}"
+}
+
 install_package() {
     local pkg="$1"
     if ! dpkg -l | grep -q "^ii  $pkg "; then
@@ -204,12 +216,16 @@ menu_native() {
     echo
     reading "请选择 [0-4]: " choice
     
+    local default_pool=$(get_available_pool_name)
+    local default_size=$(get_available_space)
+    
     case "$choice" in
         1|2|3)
-            reading "存储池名称 [pool1]: " pool_name
-            pool_name=${pool_name:-pool1}
-            reading "存储大小 GB [50]: " size_gb
-            size_gb=${size_gb:-50}
+            info "当前可用磁盘空间: ${default_size}GB"
+            reading "存储池名称 [$default_pool]: " pool_name
+            pool_name=${pool_name:-$default_pool}
+            reading "存储大小 GB [$default_size]: " size_gb
+            size_gb=${size_gb:-$default_size}
             
             case "$choice" in
                 1) create_native_auto "zfs" "$pool_name" "$size_gb" ;;
@@ -218,8 +234,8 @@ menu_native() {
             esac
             ;;
         4)
-            reading "存储池名称 [pool1]: " pool_name
-            pool_name=${pool_name:-pool1}
+            reading "存储池名称 [$default_pool]: " pool_name
+            pool_name=${pool_name:-$default_pool}
             reading "目录路径 [/opt/lxd-dir]: " dir_path
             dir_path=${dir_path:-/opt/lxd-dir}
             create_dir_pool "$dir_path" "$pool_name"
