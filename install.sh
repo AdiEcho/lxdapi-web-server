@@ -26,14 +26,12 @@ if [[ "$SYSTEM" != "Debian" && "$SYSTEM" != "Ubuntu" ]]; then
     exit 1
 fi
 
-# 获取系统版本号
 if [[ "$SYSTEM" == "Debian" ]]; then
     OS_VERSION=$(cat /etc/debian_version | cut -d. -f1)
 elif [[ "$SYSTEM" == "Ubuntu" ]]; then
     OS_VERSION=$(grep VERSION_ID /etc/os-release | cut -d'"' -f2 | cut -d. -f1)
 fi
 
-# 检查推荐版本
 RECOMMENDED=false
 if [[ "$SYSTEM" == "Debian" && ("$OS_VERSION" == "12" || "$OS_VERSION" == "13") ]]; then
     RECOMMENDED=true
@@ -255,7 +253,6 @@ setup_storage() {
         fi
     done
     
-    # 安装存储后端依赖
     case "$storage_driver" in
         zfs)
             if ! command -v zpool &>/dev/null; then
@@ -263,7 +260,7 @@ setup_storage() {
                 if [[ "$SYSTEM" == "Ubuntu" ]]; then
                     install_package zfsutils-linux
                 else
-                    bash /root/lxdapi-n/build_zfs_on_debian.sh || bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh)
+                    bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh)
                 fi
             fi
             ;;

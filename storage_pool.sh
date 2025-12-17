@@ -92,7 +92,6 @@ list_disks() {
     echo
     lsblk -d -n -o NAME,SIZE,TYPE | while read name size type; do
         if [[ "$type" == "disk" ]]; then
-            # 转换大小为GB数值
             size_num=$(echo "$size" | sed 's/[^0-9.]//g')
             size_unit=$(echo "$size" | sed 's/[0-9.]//g')
             case "$size_unit" in
