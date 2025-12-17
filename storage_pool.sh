@@ -49,6 +49,8 @@ install_zfs() {
         apt-get update -qq && apt-get install -y zfsutils-linux -qq
     fi
     
+    snap set lxd zfs.external=true
+    
     ok "ZFS 安装完成"
     return 0
 }
