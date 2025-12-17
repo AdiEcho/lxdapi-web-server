@@ -31,6 +31,10 @@ check_zfs() {
 install_zfs() {
     if check_zfs; then
         ok "ZFS 已安装"
+        info "配置 LXD 使用系统 ZFS..."
+        snap set lxd zfs.external=true
+        snap restart lxd
+        sleep 3
         return 0
     fi
     
@@ -49,7 +53,10 @@ install_zfs() {
         apt-get update -qq && apt-get install -y zfsutils-linux -qq
     fi
     
+    info "配置 LXD 使用系统 ZFS..."
     snap set lxd zfs.external=true
+    snap restart lxd
+    sleep 3
     
     ok "ZFS 安装完成"
     return 0
