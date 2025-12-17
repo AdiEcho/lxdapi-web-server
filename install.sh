@@ -263,6 +263,7 @@ setup_storage() {
                     bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh)
                 fi
             fi
+            snap set lxd zfs.external=true
             ;;
         btrfs)
             install_package btrfs-progs
