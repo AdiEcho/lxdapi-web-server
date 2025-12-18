@@ -222,6 +222,7 @@ function lxdwebserver_CreateAccount($params)
                 'username'     => $username,
                 'password'     => $res['data']['user']['password'] ?? $params['password'],
                 'dedicatedip'  => $params['server_ip'],
+                'bwlimit'      => (int)($configoptions['traffic_limit'] ?? 100),
             ]);
         } catch (\Exception $e) {
             return ['status' => 'error', 'msg' => '创建成功但同步数据失败'];
@@ -362,11 +363,43 @@ function lxdwebserver_Status($params)
                 $result['data']['status'] = 'suspend';
                 $result['data']['des'] = '已禁用';
             }
-            return $result;
+            $originalTraffic = Db::name('products')
+        ->where('id', $params['productid'])
+        ->value('config_option7');
+    $trafficLimit = $originalTraffic ? (int)$originalTraffic : 10;
+    Db::name('host')->where('id', $params['hostid'])->update(['bwlimit' => $trafficLimit]);
+    
+    return $result;
         }
     }
     
     return ['status' => 'error', 'msg' => '用户不存在'];
+}
+
+function lxdwebserver_UsageUpdate($params)
+{
+    $username = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    
+    $containers = lxdwebserver_ApiRequest($params, '/api/system/containers?username=' . urlencode($username), [], 'GET');
+    
+    if (!$containers || !isset($containers['code']) || $containers['code'] != 200) {
+        return ['status' => 'error', 'msg' => '获取容器列表失败'];
+    }
+    
+    $totalUsedGB = 0;
+    foreach ($containers['data'] ?? [] as $container) {
+        $name = $container['name'] ?? '';
+        if (!$name) continue;
+        
+        $trafficRes = lxdwebserver_ApiRequest($params, '/api/system/traffic?name=' . urlencode($name), [], 'GET');
+        if ($trafficRes && isset($trafficRes['code']) && $trafficRes['code'] == 200 && isset($trafficRes['data']['TotalGB'])) {
+            $totalUsedGB += (float)$trafficRes['data']['TotalGB'];
+        }
+    }
+    
+    Db::name('host')->where('id', $params['hostid'])->update(['bwusage' => $totalUsedGB]);
+    
+    return ['status' => 'success', 'msg' => '流量同步成功'];
 }
 
 function lxdwebserver_Sync($params)
@@ -383,6 +416,25 @@ function lxdwebserver_Sync($params)
                 } else {
                     $update['domainstatus'] = 'Suspended';
                 }
+                
+                if (isset($user['traffic_limit'])) {
+                    $update['bwlimit'] = (int)$user['traffic_limit'];
+                }
+                
+                $containers = lxdwebserver_ApiRequest($params, '/api/system/containers?username=' . urlencode($username), [], 'GET');
+                if ($containers && isset($containers['code']) && $containers['code'] == 200) {
+                    $totalUsedGB = 0;
+                    foreach ($containers['data'] ?? [] as $container) {
+                        $name = $container['name'] ?? '';
+                        if (!$name) continue;
+                        $trafficRes = lxdwebserver_ApiRequest($params, '/api/system/traffic?name=' . urlencode($name), [], 'GET');
+                        if ($trafficRes && isset($trafficRes['code']) && $trafficRes['code'] == 200 && isset($trafficRes['data']['TotalGB'])) {
+                            $totalUsedGB += (float)$trafficRes['data']['TotalGB'];
+                        }
+                    }
+                    $update['bwusage'] = $totalUsedGB;
+                }
+                
                 if (!empty($update)) {
                     Db::name('host')->where('id', $params['hostid'])->update($update);
                 }
@@ -401,9 +453,29 @@ function lxdwebserver_AdminButton($params)
     if (!empty($params['domain'])) {
         return [
             'Sync' => '同步状态',
+            'TrafficReset' => '重置流量',
         ];
     }
     return [];
+}
+
+function lxdwebserver_TrafficReset($params)
+{
+    $username = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    
+    $res = lxdwebserver_ApiRequest($params, '/api/system/traffic/reset?username=' . urlencode($username), [], 'POST');
+    
+    $originalTraffic = Db::name('products')
+        ->where('id', $params['productid'])
+        ->value('config_option7');
+    $trafficLimit = $originalTraffic ? (int)$originalTraffic : 10;
+    Db::name('host')->where('id', $params['hostid'])->update(['bwlimit' => $trafficLimit]);
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '流量重置成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '流量重置失败'];
 }
 
 function lxdwebserver_RegenerateKey($params)
@@ -461,4 +533,162 @@ function lxdwebserver_ClientAreaOutput($params, $key)
     }
     
     return '';
+}
+
+
+function lxdwebserver_ChangePackage($params)
+{
+    $username = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    $userId = lxdwebserver_GetUserId($params, $username);
+    
+    if (!$userId) {
+        return ['status' => 'error', 'msg' => '用户不存在'];
+    }
+    
+    $configoptions = $params['configoptions'];
+    
+    $requestData = [
+        'cpu_quota'           => (int)($configoptions['cpu_limit'] ?? 0) ?: null,
+        'memory_quota'        => (int)($configoptions['memory_limit'] ?? 0) ?: null,
+        'disk_quota'          => (int)($configoptions['disk_limit'] ?? 0) ?: null,
+        'traffic_limit'       => (int)($configoptions['traffic_limit'] ?? 0) ?: null,
+        'ingress'             => (int)($configoptions['ingress'] ?? 0) ?: null,
+        'egress'              => (int)($configoptions['egress'] ?? 0) ?: null,
+        'ipv4_pool_limit'     => (int)($configoptions['ipv4_pool_limit'] ?? 0) ?: null,
+        'ipv4_mapping_limit'  => (int)($configoptions['ipv4_mapping_limit'] ?? 0) ?: null,
+        'ipv6_pool_limit'     => (int)($configoptions['ipv6_pool_limit'] ?? 0) ?: null,
+        'ipv6_mapping_limit'  => (int)($configoptions['ipv6_mapping_limit'] ?? 0) ?: null,
+        'reverse_proxy_limit' => (int)($configoptions['reverse_proxy_limit'] ?? 0) ?: null,
+        'cpu_allowance'       => (int)($configoptions['cpu_allowance'] ?? 0) ?: null,
+        'io_read'             => (int)($configoptions['io_read'] ?? 0) ?: null,
+        'io_write'            => (int)($configoptions['io_write'] ?? 0) ?: null,
+        'processes_limit'     => (int)($configoptions['processes_limit'] ?? 0) ?: null,
+    ];
+    
+    if (isset($configoptions['allow_nesting'])) {
+        $requestData['allow_nesting'] = $configoptions['allow_nesting'] === 'true';
+    }
+    if (isset($configoptions['memory_swap'])) {
+        $requestData['memory_swap'] = $configoptions['memory_swap'] === 'true';
+    }
+    
+    $requestData = array_filter($requestData, function($v) { return $v !== null; });
+    
+    $res = lxdwebserver_ApiRequest($params, '/api/system/users/' . $userId, $requestData, 'PUT');
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        if (isset($configoptions['traffic_limit'])) {
+            Db::name('host')->where('id', $params['hostid'])->update([
+                'bwlimit' => (int)$configoptions['traffic_limit']
+            ]);
+        }
+        return ['status' => 'success', 'msg' => '配置升级成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '升级失败'];
+}
+
+function lxdwebserver_FlowPacketPaid($params)
+{
+    $username = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    $userId = lxdwebserver_GetUserId($params, $username);
+    
+    if (!$userId) {
+        return ['status' => 'error', 'msg' => '用户不存在'];
+    }
+    
+    $capacity = Db::name('dcim_buy_record')
+        ->where('type', 'flow_packet')
+        ->where('hostid', $params['hostid'])
+        ->where('uid', $params['uid'])
+        ->where('status', 1)
+        ->where('show_status', 0)
+        ->where('pay_time', '>', strtotime(date('Y-m-01 00:00:00')))
+        ->sum('capacity');
+    
+    $originalTraffic = (int)Db::name('host')->where('id', $params['hostid'])->value('bwlimit');
+    $originalTraffic = $originalTraffic ?: 100;
+    
+    $totalTraffic = $originalTraffic + (int)$capacity;
+    
+    $requestData = ['traffic_limit' => $totalTraffic];
+    $res = lxdwebserver_ApiRequest($params, '/api/system/users/' . $userId, $requestData, 'PUT');
+    
+    Db::name('host')->where('id', $params['hostid'])->update(['bwlimit' => $totalTraffic]);
+    
+    if ($res && isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => '流量包已生效'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '更新失败'];
+}
+
+function lxdwebserver_DailyCron()
+{
+    if (date('Y-m-d') != date('Y-m-01')) {
+        return;
+    }
+    
+    $host_data = Db::name('host')
+        ->alias('h')
+        ->leftJoin('servers s', 'h.serverid=s.id')
+        ->where('s.type', 'lxdwebserver')
+        ->whereIn('h.domainstatus', ['Active', 'Suspended'])
+        ->field('h.*')
+        ->select()
+        ->toArray();
+    
+    $model = new \app\common\model\HostModel();
+    foreach ($host_data as $v) {
+        try {
+            $params = $model->getProvisionParams($v['id']);
+            $username = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+            $userId = lxdwebserver_GetUserId($params, $username);
+            
+            $originalTraffic = 0;
+            
+            $hostConfig = Db::name('host_config_options')
+                ->where('relid', $v['id'])
+                ->find();
+            
+            if ($hostConfig) {
+                $configOption = Db::name('product_config_options_sub')
+                    ->where('config_id', $hostConfig['configid'])
+                    ->where('id', $hostConfig['optionid'])
+                    ->find();
+                
+                if ($configOption && strpos($configOption['option_name'], '|') !== false) {
+                    $originalTraffic = (int)explode('|', $configOption['option_name'])[0];
+                }
+            }
+            
+            if (!$originalTraffic) {
+                $originalTraffic = (int)($params['configoptions']['traffic_limit'] ?? 0);
+                if (!$originalTraffic) {
+                    $originalTraffic = Db::name('products')
+                        ->where('id', $v['productid'])
+                        ->value('config_option4');
+                    $originalTraffic = $originalTraffic ? (int)$originalTraffic : 100;
+                }
+            }
+            
+            if ($userId) {
+                $requestData = ['traffic_limit' => $originalTraffic];
+                lxdwebserver_ApiRequest($params, '/api/system/users/' . $userId, $requestData, 'PUT');
+            }
+        } catch (Exception $e) {
+        }
+        
+        Db::name('host')->where('id', $v['id'])->update(['bwlimit' => $originalTraffic]);
+    }
+}
+
+function lxdwebserver_FiveMinuteCron()
+{
+    $now = date('Y-m-d H:i');
+    $start = date('Y-m-01') . ' 00:00';
+    $end = date('Y-m-01') . ' 00:05';
+    if ($now >= $start && $now <= $end) {
+        lxdwebserver_DailyCron();
+    }
 }
