@@ -1,0 +1,20 @@
+{% apply spaceless %}
+{% autoescape false %}
+
+<p>尊敬的 {{ client.first_name }}，</p>
+
+<p>您的容器已恢复，现在可以正常使用了。</p>
+
+<table style="border-collapse: collapse; width: 100%; max-width: 500px;">
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>容器名称</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ service.container_name }}</td>
+    </tr>
+</table>
+
+<p style="margin-top: 20px;">您可以在用户中心管理您的容器。</p>
+
+<p>感谢您的续费！</p>
+
+{% endautoescape %}
+{% endapply %}

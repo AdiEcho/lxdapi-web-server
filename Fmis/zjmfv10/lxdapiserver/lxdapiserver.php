@@ -5,7 +5,7 @@ use app\common\model\HostModel;
 function lxdapiserver_MetaData(){
 	return [
 		'DisplayName' => '魔方财务V10-LXD对接插件 by xkatld',
-		'Version' => 'v2.0.2',
+		'Version' => 'v2.0.3',
 		'HelpDoc' => 'https://github.com/xkatld/lxdapi-web-server',
 	];
 }

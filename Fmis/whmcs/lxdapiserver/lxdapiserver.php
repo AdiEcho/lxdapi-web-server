@@ -4,7 +4,7 @@
  *
  * @package    WHMCS-LXD对接插件 by xkatld
  * @author     xkatld
- * @version    v2.0.2
+ * @version    v2.0.3
  * @link       https://github.com/xkatld/lxdapi-web-server
  */
 
@@ -21,7 +21,7 @@ function lxdapiserver_MetaData()
 {
     return [
         'DisplayName' => 'WHMCS-LXD对接插件 by xkatld',
-        'APIVersion' => 'v2.0.2',
+        'APIVersion' => 'v2.0.3',
         'RequiresServer' => true,
         'DefaultNonSSLPort' => '8443',
         'DefaultSSLPort' => '8443',

@@ -47,7 +47,7 @@ install_zfs() {
             return 1
         fi
         info "开始编译安装 ZFS..."
-        bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.0.0-main/build_zfs_on_debian.sh) || return 1
+        bash <(curl -sL https://raw.githubusercontent.com/xkatld/lxdapi-web-server/refs/heads/v2.1.0-vpsm.link/Shell/debian_zfs.sh) || return 1
     else
         info "安装 ZFS..."
         apt-get update -qq && apt-get install -y zfsutils-linux -qq
@@ -329,4 +329,5 @@ main_menu() {
 
 check_root
 check_lxd
+install_package bc
 main_menu

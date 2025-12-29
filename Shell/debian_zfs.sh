@@ -14,20 +14,22 @@ exec &> >(tee -a "$LOG_FILE")
 set -e
 set -u
 
-ZFS_VER="2.3.0"
-
-if [ "$(id -u)" -ne 0 ]; then
-   echo "错误: 此脚本需要以root权限运行。请使用 'sudo'。" >&2
-   exit 1
-fi
-
 DEBIAN_VER=$(cat /etc/debian_version | cut -d. -f1)
 ARCH=$(uname -m)
 
 case "$DEBIAN_VER" in
-    11) DEBIAN_NAME="Debian 11 (Bullseye)" ;;
-    12) DEBIAN_NAME="Debian 12 (Bookworm)" ;;
-    13|trixie) DEBIAN_NAME="Debian 13 (Trixie)" ;;
+    11) 
+        DEBIAN_NAME="Debian 11 (Bullseye)"
+        ZFS_VER="2.2.9"
+        ;;
+    12) 
+        DEBIAN_NAME="Debian 12 (Bookworm)"
+        ZFS_VER="2.3.5"
+        ;;
+    13|trixie) 
+        DEBIAN_NAME="Debian 13 (Trixie)"
+        ZFS_VER="2.3.5"
+        ;;
     *)
         echo "错误: 不支持的 Debian 版本: $DEBIAN_VER"
         exit 1

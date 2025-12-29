@@ -1,0 +1,34 @@
+{% apply spaceless %}
+{% autoescape false %}
+
+<p>尊敬的 {{ client.first_name }}，</p>
+
+<p>您的容器已激活，可以开始使用了。</p>
+
+<h3>容器信息</h3>
+
+<table style="border-collapse: collapse; width: 100%; max-width: 500px;">
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>容器名称</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ service.container_name }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>服务器</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ service.server }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>用户名</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">root</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>密码</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ service.password }}</td>
+    </tr>
+</table>
+
+<p style="margin-top: 20px;">您可以在用户中心管理您的容器。</p>
+
+<p>感谢您的使用！</p>
+
+{% endautoescape %}
+{% endapply %}

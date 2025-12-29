@@ -20,23 +20,8 @@ SERVICE_NAME="lxdapi"
 check_environment() {
     info "检测运行环境..."
     
-    if [ "$EUID" -ne 0 ]; then
-        err "请使用 root 用户运行此脚本"
-    fi
-    
     if [ ! -d "$INSTALL_DIR" ]; then
         err "未检测到 lxdapi 安装目录: $INSTALL_DIR"
-    fi
-    
-    if [ ! -f "$CONFIG_FILE" ]; then
-        err "未检测到配置文件: $CONFIG_FILE"
-    fi
-    
-    if ! command -v nft &>/dev/null; then
-        info "安装 nftables..."
-        apt-get update >/dev/null 2>&1
-        apt-get install -y nftables >/dev/null 2>&1
-        ok "nftables 已安装"
     fi
     
     ok "环境检测通过"
@@ -62,9 +47,9 @@ detect_arch() {
 
 get_current_version() {
     if [ -f "$INSTALL_DIR/lxdapi-$ARCH" ]; then
-        CURRENT_VERSION=$("$INSTALL_DIR/lxdapi-$ARCH" --version 2>/dev/null || echo "未知")
+        CURRENT_VERSION=$(stat -c %y "$INSTALL_DIR/lxdapi-$ARCH" 2>/dev/null | cut -d' ' -f1)
     else
-        CURRENT_VERSION="未知"
+        CURRENT_VERSION="未安装"
     fi
     info "当前版本: $CURRENT_VERSION"
 }
@@ -77,7 +62,10 @@ get_latest_version() {
         err "无法获取最新版本信息，请检查网络连接"
     fi
     
-    ok "最新版本: $LATEST_VERSION"
+    info "最新版本: $LATEST_VERSION"
+    read -rp "$(echo -e "${GREEN}请输入更新版本 [$LATEST_VERSION]: ${NC}")" UPDATE_VERSION
+    UPDATE_VERSION=${UPDATE_VERSION:-$LATEST_VERSION}
+    ok "更新版本: $UPDATE_VERSION"
 }
 
 stop_service() {
@@ -121,53 +109,10 @@ backup_files() {
     fi
 }
 
-fix_service_file() {
-    info "检查服务文件..."
-    
-    SERVICE_FILE="/etc/systemd/system/lxdapi.service"
-    
-    if [ ! -f "$SERVICE_FILE" ]; then
-        warn "服务文件不存在，跳过修复"
-        return
-    fi
-    
-    if grep -q "Environment=\"PATH=" "$SERVICE_FILE"; then
-        ok "服务文件PATH配置正常"
-        return
-    fi
-    
-    info "修复服务文件PATH配置..."
-    
-    EXEC_BIN="$INSTALL_DIR/lxdapi-$ARCH"
-    
-    cat > "$SERVICE_FILE" << EOF
-[Unit]
-Description=LXD API Server
-After=network.target lxd.service
-Wants=lxd.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/lxdapi
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
-ExecStart=$EXEC_BIN
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    ok "服务文件已修复"
-}
-
 download_latest() {
-    info "下载最新版本..."
+    info "下载版本 $UPDATE_VERSION..."
     
-    DOWNLOAD_URL="https://github.com/xkatld/lxdapi-web-server/releases/download/${LATEST_VERSION}/lxdapi-linux-${ARCH}.tar.gz"
+    DOWNLOAD_URL="https://github.com/xkatld/lxdapi-web-server/releases/download/${UPDATE_VERSION}/lxdapi-linux-${ARCH}.tar.gz"
     info "下载地址: $DOWNLOAD_URL"
     
     TEMP_FILE=$(mktemp)
@@ -208,7 +153,12 @@ start_service() {
     systemctl daemon-reload
     systemctl start $SERVICE_NAME
     
-    sleep 3
+    info "等待服务启动..."
+    for i in {1..10}; do
+        printf "\r[%-10s] %d/10s" "$(printf '#%.0s' $(seq 1 $i))" "$i"
+        sleep 1
+    done
+    echo
     
     if systemctl is-active --quiet $SERVICE_NAME; then
         ok "服务已启动"
@@ -226,7 +176,7 @@ show_result() {
     echo "========================================"
     echo
     info "更新前版本: $CURRENT_VERSION"
-    info "更新后版本: $LATEST_VERSION"
+    info "更新后版本: $UPDATE_VERSION"
     info "备份目录: $BACKUP_PATH"
     echo
     info "===== 服务状态 ====="
@@ -275,7 +225,6 @@ main() {
     echo
     stop_service
     backup_files
-    fix_service_file
     
     if download_latest; then
         start_service
