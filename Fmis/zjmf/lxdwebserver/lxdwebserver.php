@@ -6,7 +6,7 @@ function lxdwebserver_MetaData()
 {
     return [
         'DisplayName' => '魔方财务-LXD用户对接插件 by xkatld',
-        'APIVersion'  => 'v2.0.4',
+        'APIVersion'  => 'v2.0.5',
         'HelpDoc'     => 'https://github.com/xkatld/lxdapi-web-server',
     ];
 }
@@ -20,6 +20,13 @@ function lxdwebserver_ConfigOptions()
             'description' => '可用CPU配额，单位：核心',
             'default'     => '2',
             'key'         => 'cpu_limit',
+        ],
+        'max_cpu_per_container' => [
+            'type'        => 'text',
+            'name'        => '单容器CPU限制',
+            'description' => '单个容器最大CPU核心数，0表示不限制',
+            'default'     => '0',
+            'key'         => 'max_cpu_per_container',
         ],
         'memory_limit' => [
             'type'        => 'text',
@@ -195,6 +202,7 @@ function lxdwebserver_CreateAccount($params)
         'username'            => $username,
         'password'            => $params['password'],
         'cpu_quota'           => (int)($configoptions['cpu_limit'] ?? 2),
+        'max_cpu_per_container' => (int)($configoptions['max_cpu_per_container'] ?? 0),
         'memory_quota'        => (int)($configoptions['memory_limit'] ?? 1024),
         'disk_quota'          => (int)($configoptions['disk_limit'] ?? 10240),
         'traffic_limit'       => (int)($configoptions['traffic_limit'] ?? 100),
@@ -549,6 +557,7 @@ function lxdwebserver_ChangePackage($params)
     
     $requestData = [
         'cpu_quota'           => (int)($configoptions['cpu_limit'] ?? 0) ?: null,
+        'max_cpu_per_container' => (int)($configoptions['max_cpu_per_container'] ?? 0) ?: null,
         'memory_quota'        => (int)($configoptions['memory_limit'] ?? 0) ?: null,
         'disk_quota'          => (int)($configoptions['disk_limit'] ?? 0) ?: null,
         'traffic_limit'       => (int)($configoptions['traffic_limit'] ?? 0) ?: null,

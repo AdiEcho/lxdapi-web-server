@@ -1,0 +1,820 @@
+<?php
+
+use think\Db;
+
+define('LXDAPISERVER_DEBUG', false);
+
+function lxdapiuserserver_debug($message, $data = null)
+{
+    if (!LXDAPISERVER_DEBUG) return;
+    $log = '[LXDAPISERVER-DEBUG] ' . date('Y-m-d H:i:s') . ' | ' . $message;
+    if ($data !== null) {
+        $log .= ' | Data: ' . json_encode($data, JSON_UNESCAPED_UNICODE);
+    }
+    $log .= PHP_EOL;
+    
+    $logFile = __DIR__ . '/debug.log';
+    file_put_contents($logFile, $log, FILE_APPEND);
+}
+
+function lxdapiuserserver_MetaData()
+{
+    return [
+        'DisplayName' => '魔方财务-LXDAPI用户销售对接插件 by xkatld',
+        'APIVersion'  => 'v2.0.5',
+        'HelpDoc'     => 'https://github.com/xkatld/lxdapi-web-server',
+    ];
+}
+
+function lxdapiuserserver_ConfigOptions()
+{
+    return [
+        'cpus' => [
+            'type'        => 'text',
+            'name'        => 'CPU核心数',
+            'description' => 'CPU核心数量',
+            'default'     => '1',
+            'key'         => 'cpus',
+        ],
+        'memory' => [
+            'type'        => 'text',
+            'name'        => '内存',
+            'description' => '内存大小，单位：MB',
+            'default'     => '512',
+            'key'         => 'memory',
+        ],
+        'disk' => [
+            'type'        => 'text',
+            'name'        => '硬盘',
+            'description' => '硬盘大小，单位：MB',
+            'default'     => '1024',
+            'key'         => 'disk',
+        ],
+        'image' => [
+            'type'        => 'text',
+            'name'        => '镜像',
+            'description' => '系统镜像名称',
+            'default'     => 'alpine320',
+            'key'         => 'image',
+        ],
+        'traffic_limit' => [
+            'type'        => 'text',
+            'name'        => '月流量限制',
+            'description' => '单位：GB',
+            'default'     => '100',
+            'key'         => 'traffic_limit',
+        ],
+        'ipv4_pool_limit' => [
+            'type'        => 'text',
+            'name'        => 'IPv4地址池限制',
+            'description' => 'IPv4独立地址数量上限',
+            'default'     => '0',
+            'key'         => 'ipv4_pool_limit',
+        ],
+        'ipv4_mapping_limit' => [
+            'type'        => 'text',
+            'name'        => 'IPv4端口映射限制',
+            'description' => 'IPv4端口转发规则上限',
+            'default'     => '0',
+            'key'         => 'ipv4_mapping_limit',
+        ],
+        'ipv6_pool_limit' => [
+            'type'        => 'text',
+            'name'        => 'IPv6地址池限制',
+            'description' => 'IPv6独立地址数量上限',
+            'default'     => '0',
+            'key'         => 'ipv6_pool_limit',
+        ],
+        'ipv6_mapping_limit' => [
+            'type'        => 'text',
+            'name'        => 'IPv6端口映射限制',
+            'description' => 'IPv6端口转发规则上限',
+            'default'     => '0',
+            'key'         => 'ipv6_mapping_limit',
+        ],
+        'reverse_proxy_limit' => [
+            'type'        => 'text',
+            'name'        => '反向代理限制',
+            'description' => '反向代理域名数量上限',
+            'default'     => '0',
+            'key'         => 'reverse_proxy_limit',
+        ],
+    ];
+}
+
+function lxdapiuserserver_ParseMemory($str)
+{
+    $str = trim($str);
+    if (empty($str)) return 0;
+    
+    if (stripos($str, 'GB') !== false) {
+        return intval($str) * 1024;
+    } elseif (stripos($str, 'MB') !== false) {
+        return intval($str);
+    } else {
+        return intval($str);
+    }
+}
+
+function lxdapiuserserver_ParseBandwidth($str)
+{
+    $str = trim($str);
+    if (empty($str)) return 0;
+    
+    if (stripos($str, 'Gbit') !== false) {
+        return intval($str) * 1000;
+    } elseif (stripos($str, 'Mbit') !== false) {
+        return intval($str);
+    } else {
+        return intval($str);
+    }
+}
+
+function lxdapiuserserver_ApiRequest($params, $endpoint, $data = [], $method = 'POST')
+{
+    $curl = curl_init();
+    
+    $protocol = 'https';
+    $url = $protocol . '://' . $params['server_ip'] . ':' . $params['port'] . $endpoint;
+    
+    // 使用正确的参数名
+    $username = $params['server_username'] ?? $params['username'] ?? '';
+    $password = $params['server_password'] ?? $params['password'] ?? '';
+    
+    lxdapiuserserver_debug('API请求', [
+        'url' => $url,
+        'method' => $method,
+        'username' => $username
+    ]);
+    
+    $curlOptions = [
+        CURLOPT_URL            => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_ENCODING       => '',
+        CURLOPT_MAXREDIRS      => 10,
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST  => $method,
+        CURLOPT_HTTPHEADER     => [
+            'X-User-Username: ' . $username,
+            'X-User-Password: ' . $password,
+            'Content-Type: application/json',
+        ],
+    ];
+    
+    $curlOptions[CURLOPT_SSL_VERIFYPEER] = false;
+    $curlOptions[CURLOPT_SSL_VERIFYHOST] = false;
+    $curlOptions[CURLOPT_SSLVERSION] = CURL_SSLVERSION_TLSv1_2;
+    
+    if ($method === 'POST' || $method === 'PUT') {
+        if (!empty($data)) {
+            $curlOptions[CURLOPT_POSTFIELDS] = json_encode($data);
+        }
+    }
+    
+    curl_setopt_array($curl, $curlOptions);
+    
+    $response = curl_exec($curl);
+    $errno = curl_errno($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($curl);
+    
+    curl_close($curl);
+    
+    lxdapiuserserver_debug('API响应', [
+        'http_code' => $httpCode,
+        'response_length' => strlen($response),
+        'curl_errno' => $errno
+    ]);
+    
+    if ($errno) {
+        lxdapiuserserver_debug('CURL错误', [
+            'errno' => $errno,
+            'error' => $curlError
+        ]);
+        return null;
+    }
+    
+    $decoded = json_decode($response, true);
+    return $decoded;
+}
+
+function lxdapiuserserver_TestLink($params)
+{
+    lxdapiuserserver_debug('测试API连接', $params);
+    
+    $res = lxdapiuserserver_ApiRequest($params, '/api/user/containers', [], 'GET');
+    
+    lxdapiuserserver_debug('TestLink API响应', $res);
+    
+    if ($res === null) {
+        return [
+            'status' => 200,
+            'data'   => [
+                'server_status' => 0,
+                'msg'           => '连接失败: 无法连接到服务器'
+            ]
+        ];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return [
+            'status' => 200,
+            'data'   => [
+                'server_status' => 1,
+                'msg'           => '连接成功'
+            ]
+        ];
+    }
+    
+    return [
+        'status' => 200,
+        'data'   => [
+            'server_status' => 0,
+            'msg'           => '连接失败: ' . ($res['msg'] ?? '未知错误')
+        ]
+    ];
+}
+
+function lxdapiuserserver_CreateAccount($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('创建容器', ['domain' => $containerName]);
+    
+    // 使用正确的参数名检查
+    $username = $params['server_username'] ?? $params['username'] ?? '';
+    $password = $params['server_password'] ?? $params['password'] ?? '';
+    
+    if (empty($username) || empty($password)) {
+        lxdapiuserserver_debug('认证参数缺失', $params);
+        return ['status' => 'error', 'msg' => '服务器配置错误：缺少认证信息'];
+    }
+    
+    $configoptions = $params['configoptions'];
+    
+    $requestData = [
+        'name' => $containerName,
+        'password' => $params['password'],
+        'image' => $configoptions['image'] ?? 'alpine320',
+        'cpu' => (int)($configoptions['cpus'] ?? 1),
+        'memory' => (int)($configoptions['memory'] ?? 512),
+        'disk' => (int)($configoptions['disk'] ?? 1024),
+        'traffic_limit' => (int)($configoptions['traffic_limit'] ?? 100),
+        'ipv4_pool_limit' => (int)($configoptions['ipv4_pool_limit'] ?? 0),
+        'ipv4_mapping_limit' => (int)($configoptions['ipv4_mapping_limit'] ?? 0),
+        'ipv6_pool_limit' => (int)($configoptions['ipv6_pool_limit'] ?? 0),
+        'ipv6_mapping_limit' => (int)($configoptions['ipv6_mapping_limit'] ?? 0),
+        'reverse_proxy_limit' => (int)($configoptions['reverse_proxy_limit'] ?? 0),
+    ];
+    
+    lxdapiuserserver_debug('创建请求数据', $requestData);
+    
+    $res = lxdapiuserserver_ApiRequest($params, '/api/user/containers', $requestData, 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        try {
+            $update = [
+                'domainstatus' => 'Active',
+                'username'     => 'root',
+                'dedicatedip'  => $params['server_ip'],
+                'bwlimit'      => (int)($configoptions['traffic_limit'] ?? 100),
+            ];
+            
+            Db::name('host')->where('id', $params['hostid'])->update($update);
+            lxdapiuserserver_debug('数据库更新成功', $update);
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'msg' => '创建成功但同步数据失败: ' . $e->getMessage()];
+        }
+        
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '创建成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '创建失败'];
+}
+
+function lxdapiuserserver_TerminateAccount($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('删除容器', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName);
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'DELETE');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '删除成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '删除失败'];
+}
+
+function lxdapiuserserver_On($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('启动容器', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=start';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '启动成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '启动失败'];
+}
+
+function lxdapiuserserver_Off($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('停止容器', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=stop';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '停止成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '停止失败'];
+}
+
+function lxdapiuserserver_Reboot($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('重启容器', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=restart';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '重启成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '重启失败'];
+}
+
+function lxdapiuserserver_SuspendAccount($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('暂停容器', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=suspend';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '暂停成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '暂停失败'];
+}
+
+function lxdapiuserserver_UnsuspendAccount($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('恢复容器', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=unsuspend';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '恢复成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '恢复失败'];
+}
+
+function lxdapiuserserver_Status($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('查询状态', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName);
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'GET');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200 && isset($res['data']['status'])) {
+        $containerStatus = $res['data']['status'];
+        $result = ['status' => 'success'];
+        
+        switch (strtoupper($containerStatus)) {
+            case 'RUNNING':
+                $result['data']['status'] = 'on';
+                $result['data']['des'] = '运行中';
+                break;
+            case 'STOPPED':
+                $result['data']['status'] = 'off';
+                $result['data']['des'] = '已停止';
+                break;
+            case 'FROZEN':
+                $result['data']['status'] = 'suspend';
+                $result['data']['des'] = '已暂停';
+                break;
+            default:
+                $result['data']['status'] = 'unknown';
+                $result['data']['des'] = '未知状态';
+                break;
+        }
+        
+        return $result;
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '查询失败'];
+}
+
+function lxdapiuserserver_UsageUpdate($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    
+    $res = lxdapiuserserver_ApiRequest($params, '/api/user/traffic?name=' . urlencode($containerName), [], 'GET');
+    
+    if ($res === null || !isset($res['code']) || $res['code'] != 200) {
+        return ['status' => 'error', 'msg' => '获取流量失败'];
+    }
+    
+    $usedGB = isset($res['data']['TotalGB']) ? (float)$res['data']['TotalGB'] : 0;
+    
+    Db::name('host')->where('id', $params['hostid'])->update(['bwusage' => $usedGB]);
+    
+    return ['status' => 'success', 'msg' => '流量同步成功'];
+}
+
+function lxdapiuserserver_Sync($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('同步容器信息', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName);
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'GET');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        try {
+            $update = [];
+            
+            if (isset($res['data']['status'])) {
+                $containerStatus = strtoupper($res['data']['status']);
+                if ($containerStatus === 'RUNNING') {
+                    $update['domainstatus'] = 'Active';
+                } elseif ($containerStatus === 'STOPPED') {
+                    $update['domainstatus'] = 'Suspended';
+                }
+            }
+            
+            if (isset($res['data']['traffic_limit'])) {
+                $update['bwlimit'] = (int)$res['data']['traffic_limit'];
+            }
+            
+            $trafficRes = lxdapiuserserver_ApiRequest($params, '/api/user/traffic?name=' . urlencode($containerName), [], 'GET');
+            if ($trafficRes && isset($trafficRes['code']) && $trafficRes['code'] == 200 && isset($trafficRes['data']['TotalGB'])) {
+                $update['bwusage'] = (float)$trafficRes['data']['TotalGB'];
+            }
+            
+            if (!empty($update)) {
+                Db::name('host')->where('id', $params['hostid'])->update($update);
+                lxdapiuserserver_debug('同步数据库成功', $update);
+            }
+            
+            return ['status' => 'success', 'msg' => '同步成功'];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'msg' => '同步失败: ' . $e->getMessage()];
+        }
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '同步失败'];
+}
+
+function lxdapiuserserver_Reinstall($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('重装系统', ['domain' => $containerName, 'reinstall_os' => $params['reinstall_os'] ?? 'null']);
+    
+    if (empty($params['reinstall_os'])) {
+        return ['status' => 'error', 'msg' => '操作系统参数错误'];
+    }
+    
+    $requestData = [
+        'image' => $params['reinstall_os'],
+        'password' => $params['password'],
+    ];
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=reinstall';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, $requestData, 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '重装成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '重装失败'];
+}
+
+function lxdapiuserserver_AdminButton($params)
+{
+    if (!empty($params['domain'])) {
+        return [
+            'Sync' => '同步状态',
+            'TrafficReset' => '重置流量',
+        ];
+    }
+    return [];
+}
+
+function lxdapiuserserver_TrafficReset($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('重置流量', ['domain' => $containerName]);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=reset-traffic';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '流量重置成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '流量重置失败'];
+}
+
+function lxdapiuserserver_CrackPassword($params, $new_pass)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('重置密码', ['domain' => $containerName]);
+    
+    $requestData = [
+        'password' => $new_pass
+    ];
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/action?action=reset-password';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, $requestData, 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        try {
+            Db::name('host')->where('id', $params['hostid'])->update(['password' => $new_pass]);
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'msg' => '密码重置成功但同步数据失败: ' . $e->getMessage()];
+        }
+        return ['status' => 'success', 'msg' => $res['msg'] ?? '密码重置成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '密码重置失败'];
+}
+
+function lxdapiuserserver_vnc($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('VNC控制台', ['domain' => $containerName]);
+    
+    $requestData = ['hostname' => $containerName];
+    $res = lxdapiuserserver_ApiRequest($params, '/api/user/console/create-token', $requestData, 'POST');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200 && isset($res['data']['token'])) {
+        $consoleUrl = 'https://' . $params['server_ip'] . ':' . $params['port'] . '/console?token=' . $res['data']['token'];
+        
+        return [
+            'status' => 'success',
+            'url' => $consoleUrl
+        ];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? 'VNC连接失败'];
+}
+
+function lxdapiuserserver_ClientArea($params)
+{
+    return [
+        'info' => ['name' => '容器信息'],
+    ];
+}
+
+function lxdapiuserserver_ClientAreaOutput($params, $key)
+{
+    lxdapiuserserver_debug('ClientAreaOutput调用', ['key' => $key]);
+    
+    if ($key == 'info') {
+        $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+        
+        $endpoint = '/api/user/containers/' . urlencode($containerName) . '/credential';
+        $res = lxdapiuserserver_ApiRequest($params, $endpoint, [], 'GET');
+        
+        $jumpUrl = '';
+        $iframeUrl = '';
+        $accessCode = '';
+        $errorMsg = '';
+        
+        if (isset($res['code']) && $res['code'] == 200 && isset($res['data'])) {
+            $accessCode = $res['data']['hash'] ?? '';
+            $protocol = 'https';
+            $baseUrl = $protocol . '://' . $params['server_ip'] . ':' . $params['port'];
+            $jumpUrl = $baseUrl . '/container/dashboard?hash=' . $accessCode;
+            $iframeUrl = $baseUrl . '/container/dashboard/base?hash=' . $accessCode;
+        } else {
+            $errorMsg = $res['msg'] ?? '获取访问码失败';
+        }
+        
+        return [
+            'template' => 'templates/info.html',
+            'vars' => [
+                'container_name' => $containerName,
+                'server_ip' => $params['server_ip'],
+                'server_port' => $params['port'],
+                'jump_url' => $jumpUrl,
+                'iframe_url' => $iframeUrl,
+                'access_code' => $accessCode,
+                'error_msg' => $errorMsg,
+            ]
+        ];
+    }
+    
+    return '';
+}
+
+
+function lxdapiuserserver_ChangePackage($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    lxdapiuserserver_debug('升级配置', ['domain' => $containerName]);
+    
+    $configoptions = $params['configoptions'];
+    
+    $requestData = [
+        'cpu'                => (int)($configoptions['cpus'] ?? 0) ?: null,
+        'memory'             => (int)($configoptions['memory'] ?? 0) ?: null,
+        'disk'               => (int)($configoptions['disk'] ?? 0) ?: null,
+        'traffic_limit'      => (int)($configoptions['traffic_limit'] ?? 0) ?: null,
+        'ipv4_pool_limit'    => (int)($configoptions['ipv4_pool_limit'] ?? 0) ?: null,
+        'ipv4_mapping_limit' => (int)($configoptions['ipv4_mapping_limit'] ?? 0) ?: null,
+        'ipv6_pool_limit'    => (int)($configoptions['ipv6_pool_limit'] ?? 0) ?: null,
+        'ipv6_mapping_limit' => (int)($configoptions['ipv6_mapping_limit'] ?? 0) ?: null,
+        'reverse_proxy_limit'=> (int)($configoptions['reverse_proxy_limit'] ?? 0) ?: null,
+    ];
+    
+    $requestData = array_filter($requestData, function($v) { return $v !== null; });
+    
+    lxdapiuserserver_debug('升级请求数据', $requestData);
+    
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/config';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, $requestData, 'PUT');
+    
+    if ($res === null) {
+        return ['status' => 'error', 'msg' => '请求失败'];
+    }
+    
+    if (isset($res['code']) && $res['code'] == 200) {
+        if (isset($configoptions['traffic_limit'])) {
+            Db::name('host')->where('id', $params['hostid'])->update([
+                'bwlimit' => (int)$configoptions['traffic_limit']
+            ]);
+        }
+        return ['status' => 'success', 'msg' => '配置升级成功'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '升级失败'];
+}
+
+function lxdapiuserserver_FlowPacketPaid($params)
+{
+    $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+    
+    $capacity = Db::name('dcim_buy_record')
+        ->where('type', 'flow_packet')
+        ->where('hostid', $params['hostid'])
+        ->where('uid', $params['uid'])
+        ->where('status', 1)
+        ->where('show_status', 0)
+        ->where('pay_time', '>', strtotime(date('Y-m-01 00:00:00')))
+        ->sum('capacity');
+    
+    $originalTraffic = (int)Db::name('host')->where('id', $params['hostid'])->value('bwlimit');
+    $originalTraffic = $originalTraffic ?: 10;
+    
+    $totalTraffic = $originalTraffic + (int)$capacity;
+    
+    $requestData = ['traffic_limit' => $totalTraffic];
+    $endpoint = '/api/user/containers/' . urlencode($containerName) . '/config';
+    $res = lxdapiuserserver_ApiRequest($params, $endpoint, $requestData, 'PUT');
+    
+    Db::name('host')->where('id', $params['hostid'])->update(['bwlimit' => $totalTraffic]);
+    
+    if ($res && isset($res['code']) && $res['code'] == 200) {
+        return ['status' => 'success', 'msg' => '流量包已生效'];
+    }
+    
+    return ['status' => 'error', 'msg' => $res['msg'] ?? '更新失败'];
+}
+
+function lxdapiuserserver_DailyCron()
+{
+    if (date('Y-m-d') != date('Y-m-01')) {
+        return;
+    }
+    
+    $host_data = Db::name('host')
+        ->alias('h')
+        ->leftJoin('servers s', 'h.serverid=s.id')
+        ->where('s.type', 'lxdapiserver')
+        ->whereIn('h.domainstatus', ['Active', 'Suspended'])
+        ->field('h.*')
+        ->select()
+        ->toArray();
+    
+    $model = new \app\common\model\HostModel();
+    foreach ($host_data as $v) {
+        try {
+            $params = $model->getProvisionParams($v['id']);
+            $containerName = is_array($params['domain']) ? $params['domain'][0] : $params['domain'];
+            
+            $originalTraffic = 0;
+            
+            $hostConfig = Db::name('host_config_options')
+                ->where('relid', $v['id'])
+                ->find();
+            
+            if ($hostConfig) {
+                $configOption = Db::name('product_config_options_sub')
+                    ->where('config_id', $hostConfig['configid'])
+                    ->where('id', $hostConfig['optionid'])
+                    ->find();
+                
+                if ($configOption && strpos($configOption['option_name'], '|') !== false) {
+                    $originalTraffic = (int)explode('|', $configOption['option_name'])[0];
+                }
+            }
+            
+            if (!$originalTraffic) {
+                $originalTraffic = (int)($params['configoptions']['traffic_limit'] ?? 0);
+                if (!$originalTraffic) {
+                    $originalTraffic = Db::name('products')
+                        ->where('id', $v['productid'])
+                        ->value('config_option7');
+                    $originalTraffic = $originalTraffic ? (int)$originalTraffic : 10;
+                }
+            }
+            
+            $requestData = ['traffic_limit' => $originalTraffic];
+            $endpoint = '/api/user/containers/' . urlencode($containerName) . '/config';
+            lxdapiuserserver_ApiRequest($params, $endpoint, $requestData, 'PUT');
+        } catch (Exception $e) {
+        }
+        
+        Db::name('host')->where('id', $v['id'])->update(['bwlimit' => $originalTraffic]);
+    }
+}
+
+function lxdapiuserserver_FiveMinuteCron()
+{
+    $now = date('Y-m-d H:i');
+    $start = date('Y-m-01') . ' 00:00';
+    $end = date('Y-m-01') . ' 00:05';
+    if ($now >= $start && $now <= $end) {
+        lxdapiuserserver_DailyCron();
+    }
+}
