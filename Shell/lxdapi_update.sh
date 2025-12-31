@@ -162,6 +162,13 @@ start_service() {
     
     if systemctl is-active --quiet $SERVICE_NAME; then
         ok "服务已启动"
+        if command -v lxc &>/dev/null && lxc network show lxdbr0 &>/dev/null; then
+            systemctl reload snap.lxd.daemon 2>/dev/null
+            sleep 3
+            lxc network set lxdbr0 ipv4.nat true 2>/dev/null
+            lxc network set lxdbr0 ipv6.nat true 2>/dev/null
+            ok "LXD NAT 规则已重建"
+        fi
     else
         warn "服务启动失败，查看日志:"
         journalctl -u $SERVICE_NAME -n 10 --no-pager

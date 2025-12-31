@@ -65,6 +65,8 @@ install_base_packages() {
     ok "nftables 已启动"
     
     if command -v lxc &>/dev/null && lxc network show lxdbr0 &>/dev/null; then
+        systemctl reload snap.lxd.daemon 2>/dev/null
+        sleep 3
         lxc network set lxdbr0 ipv4.nat true 2>/dev/null
         lxc network set lxdbr0 ipv6.nat true 2>/dev/null
         ok "LXD NAT 规则已重建"
