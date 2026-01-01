@@ -56,7 +56,24 @@ get_current_version() {
 
 get_latest_version() {
     info "获取最新版本..."
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/xkatld/lxdapi-web-server/releases/latest | grep '"tag_name"' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+    
+    while true; do
+        read -rp "$(echo -e "${GREEN}请选择下载源 github/gitee [github]: ${NC}")" download_source
+        download_source=${download_source:-github}
+        if [[ "$download_source" =~ ^(github|gitee)$ ]]; then
+            break
+        else
+            warn "请输入 github 或 gitee"
+        fi
+    done
+    
+    if [[ "$download_source" == "github" ]]; then
+        LATEST_VERSION=$(curl -s https://api.github.com/repos/xkatld/lxdapi-web-server/releases/latest | grep '"tag_name"' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+        BASE_URL="https://github.com/xkatld/lxdapi-web-server/releases/download"
+    else
+        LATEST_VERSION=$(curl -s https://gitee.com/api/v5/repos/xkatld/lxdapi-web-server/releases/latest | grep '"tag_name"' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+        BASE_URL="https://gitee.com/xkatld/lxdapi-web-server/releases/download"
+    fi
     
     if [ -z "$LATEST_VERSION" ]; then
         err "无法获取最新版本信息，请检查网络连接"
@@ -112,7 +129,7 @@ backup_files() {
 download_latest() {
     info "下载版本 $UPDATE_VERSION..."
     
-    DOWNLOAD_URL="https://github.com/xkatld/lxdapi-web-server/releases/download/${UPDATE_VERSION}/lxdapi-linux-${ARCH}.tar.gz"
+    DOWNLOAD_URL="${BASE_URL}/${UPDATE_VERSION}/lxdapi-linux-${ARCH}.tar.gz"
     info "下载地址: $DOWNLOAD_URL"
     
     TEMP_FILE=$(mktemp)
