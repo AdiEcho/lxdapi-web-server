@@ -166,149 +166,8 @@ configure_lxdapi() {
     reading "请输入任务自动清理天数 [7]：" auto_cleanup_days
     auto_cleanup_days=${auto_cleanup_days:-7}
     
-    while true; do
-        reading "请选择任务队列后端 memory/redis [memory]：" task_backend
-        task_backend=${task_backend:-memory}
-        if [[ "$task_backend" =~ ^(memory|redis)$ ]]; then
-            break
-        else
-            warn "请输入 memory 或 redis"
-        fi
-    done
-    
-    if [[ "$task_backend" == "redis" ]]; then
-        while true; do
-            reading "使用本地安装还是远程配置？local/remote [local]：" redis_location
-            redis_location=${redis_location:-local}
-            if [[ "$redis_location" =~ ^(local|remote)$ ]]; then
-                break
-            else
-                warn "请输入 local 或 remote"
-            fi
-        done
-        
-        if [[ "$redis_location" == "local" ]]; then
-            info "安装 Redis..."
-            apt-get install -y redis-server >/dev/null 2>&1
-            systemctl start redis-server
-            systemctl enable redis-server
-            
-            redis_host="localhost"
-            redis_port="6379"
-            redis_password=""
-            redis_db="0"
-            ok "Redis 已安装"
-        else
-            reading "请输入 Redis 主机地址：" redis_host
-            reading "请输入 Redis 端口 [6379]：" redis_port
-            redis_port=${redis_port:-6379}
-            reading "请输入 Redis 密码 [留空表示无密码]：" redis_password
-            reading "请输入 Redis 数据库编号 [0]：" redis_db
-            redis_db=${redis_db:-0}
-        fi
-    else
-        redis_host="localhost"
-        redis_port="6379"
-        redis_password=""
-        redis_db="0"
-    fi
-    
-    while true; do
-        reading "请选择数据库类型 sqlite/mysql/postgres [sqlite]：" db_type
-        db_type=${db_type:-sqlite}
-        if [[ "$db_type" =~ ^(sqlite|mysql|postgres)$ ]]; then
-            break
-        else
-            warn "请输入 sqlite、mysql 或 postgres"
-        fi
-    done
-    
-    if [[ "$db_type" == "mysql" ]]; then
-        while true; do
-            reading "使用本地安装还是远程配置？local/remote [local]：" mysql_location
-            mysql_location=${mysql_location:-local}
-            if [[ "$mysql_location" =~ ^(local|remote)$ ]]; then
-                break
-            else
-                warn "请输入 local 或 remote"
-            fi
-        done
-        
-        if [[ "$mysql_location" == "local" ]]; then
-            info "安装 MariaDB..."
-            apt-get install -y mariadb-server >/dev/null 2>&1
-            systemctl start mariadb
-            systemctl enable mariadb
-            
-            mysql_host="localhost"
-            mysql_port="3306"
-            mysql_user="lxdapi"
-            mysql_password=$(openssl rand -hex 8)
-            mysql_database="lxdapi"
-            
-            info "创建数据库和用户..."
-            mysql -u root << EOF
-CREATE DATABASE IF NOT EXISTS ${mysql_database};
-CREATE USER IF NOT EXISTS '${mysql_user}'@'localhost' IDENTIFIED BY '${mysql_password}';
-GRANT ALL PRIVILEGES ON ${mysql_database}.* TO '${mysql_user}'@'localhost';
-FLUSH PRIVILEGES;
-EOF
-            ok "MariaDB 数据库已创建"
-            ok "用户: $mysql_user"
-            ok "密码: $mysql_password"
-        else
-            reading "请输入 MySQL 主机地址：" mysql_host
-            reading "请输入 MySQL 端口 [3306]：" mysql_port
-            mysql_port=${mysql_port:-3306}
-            reading "请输入 MySQL 用户名：" mysql_user
-            reading "请输入 MySQL 密码：" mysql_password
-            reading "请输入 MySQL 数据库名：" mysql_database
-        fi
-        
-    elif [[ "$db_type" == "postgres" ]]; then
-        while true; do
-            reading "使用本地安装还是远程配置？local/remote [local]：" postgres_location
-            postgres_location=${postgres_location:-local}
-            if [[ "$postgres_location" =~ ^(local|remote)$ ]]; then
-                break
-            else
-                warn "请输入 local 或 remote"
-            fi
-        done
-        
-        if [[ "$postgres_location" == "local" ]]; then
-            info "安装 PostgreSQL..."
-            apt-get install -y postgresql >/dev/null 2>&1
-            systemctl start postgresql
-            systemctl enable postgresql
-            
-            postgres_host="localhost"
-            postgres_port="5432"
-            postgres_user="lxdapi"
-            postgres_password=$(openssl rand -hex 8)
-            postgres_database="lxdapi"
-            postgres_sslmode="disable"
-            
-            info "创建数据库和用户..."
-            sudo -u postgres psql << EOF
-CREATE DATABASE ${postgres_database};
-CREATE USER ${postgres_user} WITH PASSWORD '${postgres_password}';
-GRANT ALL PRIVILEGES ON DATABASE ${postgres_database} TO ${postgres_user};
-EOF
-            ok "PostgreSQL 数据库已创建"
-            ok "用户: $postgres_user"
-            ok "密码: $postgres_password"
-        else
-            reading "请输入 PostgreSQL 主机地址：" postgres_host
-            reading "请输入 PostgreSQL 端口 [5432]：" postgres_port
-            postgres_port=${postgres_port:-5432}
-            reading "请输入 PostgreSQL 用户名：" postgres_user
-            reading "请输入 PostgreSQL 密码：" postgres_password
-            reading "请输入 PostgreSQL 数据库名：" postgres_database
-            reading "请输入 PostgreSQL SSL模式 [disable]：" postgres_sslmode
-            postgres_sslmode=${postgres_sslmode:-disable}
-        fi
-    fi
+    task_backend="memory"
+    db_type="sqlite"
     
     info "写入配置文件..."
     sed -i "s|__SERVER_PORT__|$server_port|g" "$config_file"
@@ -320,43 +179,24 @@ EOF
     sed -i "s|__TRAFFIC_BATCH_SIZE__|$traffic_batch_size|g" "$config_file"
     sed -i "s|__AUTO_CLEANUP_DAYS__|$auto_cleanup_days|g" "$config_file"
     sed -i "s|__TASK_BACKEND__|$task_backend|g" "$config_file"
-    sed -i "s|__REDIS_HOST__|$redis_host|g" "$config_file"
-    sed -i "s|__REDIS_PORT__|$redis_port|g" "$config_file"
-    sed -i "s|__REDIS_PASSWORD__|$redis_password|g" "$config_file"
-    sed -i "s|__REDIS_DB__|$redis_db|g" "$config_file"
     sed -i "s|__DB_TYPE__|$db_type|g" "$config_file"
+    sed -i "s|__REDIS_HOST__|localhost|g" "$config_file"
+    sed -i "s|__REDIS_PORT__|6379|g" "$config_file"
+    sed -i "s|__REDIS_PASSWORD__||g" "$config_file"
+    sed -i "s|__REDIS_DB__|0|g" "$config_file"
+    sed -i "s|__MYSQL_HOST__|localhost|g" "$config_file"
+    sed -i "s|__MYSQL_PORT__|3306|g" "$config_file"
+    sed -i "s|__MYSQL_USER__|root|g" "$config_file"
+    sed -i "s|__MYSQL_PASSWORD__||g" "$config_file"
+    sed -i "s|__MYSQL_DATABASE__|lxdapi|g" "$config_file"
+    sed -i "s|__POSTGRES_HOST__|localhost|g" "$config_file"
+    sed -i "s|__POSTGRES_PORT__|5432|g" "$config_file"
+    sed -i "s|__POSTGRES_USER__|postgres|g" "$config_file"
+    sed -i "s|__POSTGRES_PASSWORD__||g" "$config_file"
+    sed -i "s|__POSTGRES_DATABASE__|lxdapi|g" "$config_file"
+    sed -i "s|__POSTGRES_SSLMODE__|disable|g" "$config_file"
     
-    if [[ "$db_type" == "mysql" ]]; then
-        sed -i "s|__MYSQL_HOST__|$mysql_host|g" "$config_file"
-        sed -i "s|__MYSQL_PORT__|$mysql_port|g" "$config_file"
-        sed -i "s|__MYSQL_USER__|$mysql_user|g" "$config_file"
-        sed -i "s|__MYSQL_PASSWORD__|$mysql_password|g" "$config_file"
-        sed -i "s|__MYSQL_DATABASE__|$mysql_database|g" "$config_file"
-    else
-        sed -i "s|__MYSQL_HOST__|localhost|g" "$config_file"
-        sed -i "s|__MYSQL_PORT__|3306|g" "$config_file"
-        sed -i "s|__MYSQL_USER__|root|g" "$config_file"
-        sed -i "s|__MYSQL_PASSWORD__||g" "$config_file"
-        sed -i "s|__MYSQL_DATABASE__|lxdapi|g" "$config_file"
-    fi
-    
-    if [[ "$db_type" == "postgres" ]]; then
-        sed -i "s|__POSTGRES_HOST__|$postgres_host|g" "$config_file"
-        sed -i "s|__POSTGRES_PORT__|$postgres_port|g" "$config_file"
-        sed -i "s|__POSTGRES_USER__|$postgres_user|g" "$config_file"
-        sed -i "s|__POSTGRES_PASSWORD__|$postgres_password|g" "$config_file"
-        sed -i "s|__POSTGRES_DATABASE__|$postgres_database|g" "$config_file"
-        sed -i "s|__POSTGRES_SSLMODE__|$postgres_sslmode|g" "$config_file"
-    else
-        sed -i "s|__POSTGRES_HOST__|localhost|g" "$config_file"
-        sed -i "s|__POSTGRES_PORT__|5432|g" "$config_file"
-        sed -i "s|__POSTGRES_USER__|postgres|g" "$config_file"
-        sed -i "s|__POSTGRES_PASSWORD__||g" "$config_file"
-        sed -i "s|__POSTGRES_DATABASE__|lxdapi|g" "$config_file"
-        sed -i "s|__POSTGRES_SSLMODE__|disable|g" "$config_file"
-    fi
-    
-    ok "配置文件已更新"
+    ok "配置文件已更新 (已固定 SQLite & Memory 模式)"
 }
 
 setup_lxdapi_service() {
@@ -490,8 +330,8 @@ main() {
     info "API密钥: $api_hash"
     info "管理员用户: $admin_user"
     info "管理员密码: $admin_pass"
-    info "数据库类型: $db_type"
-    info "任务队列: $task_backend"
+    info "任务队列: Memory"
+    info "数据库类型: SQLite"
     info "流量采集间隔: ${traffic_interval}s"
     echo
     systemctl status lxdapi --no-pager | head -5
