@@ -83,7 +83,8 @@ get_available_space() {
 
 install_lxd() {
     info "安装基础网络组件..."
-    install_package nftables
+    apt-get update >/dev/null 2>&1
+    apt-get install -y nftables >/dev/null 2>&1
     lxd_snap=$(dpkg -l | awk '/^[hi]i/{print $2}' | grep -ow snap)
     lxd_snapd=$(dpkg -l | awk '/^[hi]i/{print $2}' | grep -ow snapd)
     if [[ "$lxd_snap" =~ ^snap.* ]] && [[ "$lxd_snapd" =~ ^snapd.* ]]; then
