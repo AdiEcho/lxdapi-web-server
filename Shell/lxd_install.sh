@@ -84,7 +84,14 @@ get_available_space() {
 install_lxd() {
     info "安装基础网络组件..."
     apt-get update >/dev/null 2>&1
-    apt-get install -y nftables >/dev/null 2>&1
+    if ! apt-get install -y nftables; then
+        warn "尝试修复并重新安装 nftables..."
+        apt-get install -y nftables --fix-missing
+    fi
+    if ! command -v nft >/dev/null 2>&1; then
+        err "nftables 安装失败，请检查网络或软件源"
+    fi
+    ok "nftables 安装成功"
     lxd_snap=$(dpkg -l | awk '/^[hi]i/{print $2}' | grep -ow snap)
     lxd_snapd=$(dpkg -l | awk '/^[hi]i/{print $2}' | grep -ow snapd)
     if [[ "$lxd_snap" =~ ^snap.* ]] && [[ "$lxd_snapd" =~ ^snapd.* ]]; then
