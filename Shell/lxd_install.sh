@@ -82,6 +82,8 @@ get_available_space() {
 }
 
 install_lxd() {
+    info "安装基础网络组件..."
+    install_package nftables
     lxd_snap=$(dpkg -l | awk '/^[hi]i/{print $2}' | grep -ow snap)
     lxd_snapd=$(dpkg -l | awk '/^[hi]i/{print $2}' | grep -ow snapd)
     if [[ "$lxd_snap" =~ ^snap.* ]] && [[ "$lxd_snapd" =~ ^snapd.* ]]; then
@@ -280,7 +282,9 @@ main() {
             /snap/bin/lxc network set lxdbr0 ipv4.dhcp false
             ok "IPv4 分配已关闭"
         else
-            ok "IPv4 分配已开启"
+            /snap/bin/lxc network set lxdbr0 ipv4.dhcp true
+            /snap/bin/lxc network set lxdbr0 ipv4.nat true
+            ok "IPv4 DHCP 与 NAT 已开启"
         fi
         reading "是否开启 IPv6 分配，分配NAT和独立IP需要开启 (y/n) [y]：" ipv6_dhcp
         ipv6_dhcp=${ipv6_dhcp:-y}
@@ -289,7 +293,9 @@ main() {
             /snap/bin/lxc network set lxdbr0 ipv6.address none
             ok "IPv6 分配已关闭"
         else
-            ok "IPv6 分配已开启"
+            /snap/bin/lxc network set lxdbr0 ipv6.dhcp true
+            /snap/bin/lxc network set lxdbr0 ipv6.nat true
+            ok "IPv6 DHCP 与 NAT 已开启"
         fi
         ok "网络配置完成"
     else

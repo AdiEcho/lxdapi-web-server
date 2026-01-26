@@ -57,20 +57,8 @@ install_base_packages() {
     apt-get autoremove -y >/dev/null 2>&1
     
     info "安装基础软件包..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y unzip e2fsprogs bc nftables fdisk parted iptables-persistent nginx >/dev/null 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y unzip e2fsprogs bc fdisk parted nginx >/dev/null 2>&1
     ok "软件包安装完成"
-    
-    systemctl enable nftables >/dev/null 2>&1
-    systemctl start nftables >/dev/null 2>&1
-    ok "nftables 已启动"
-    
-    if command -v lxc &>/dev/null && lxc network show lxdbr0 &>/dev/null; then
-        systemctl reload snap.lxd.daemon 2>/dev/null
-        sleep 3
-        lxc network set lxdbr0 ipv4.nat true 2>/dev/null
-        lxc network set lxdbr0 ipv6.nat true 2>/dev/null
-        ok "LXD NAT 规则已重建"
-    fi
     
     systemctl enable nginx >/dev/null 2>&1
     systemctl start nginx >/dev/null 2>&1
