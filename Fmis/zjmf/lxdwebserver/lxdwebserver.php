@@ -230,7 +230,6 @@ function lxdwebserver_CreateAccount($params)
                 'username'     => $username,
                 'password'     => $res['data']['user']['password'] ?? $params['password'],
                 'dedicatedip'  => $params['server_ip'],
-                'bwlimit'      => (int)($configoptions['traffic_limit'] ?? 100),
             ]);
         } catch (\Exception $e) {
             return ['status' => 'error', 'msg' => '创建成功但同步数据失败'];
