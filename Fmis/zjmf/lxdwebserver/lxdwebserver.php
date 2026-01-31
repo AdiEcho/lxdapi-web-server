@@ -424,12 +424,6 @@ function lxdwebserver_TrafficReset($params)
     
     $res = lxdwebserver_ApiRequest($params, '/api/system/traffic/reset?username=' . urlencode($username), [], 'POST');
     
-    $originalTraffic = Db::name('products')
-        ->where('id', $params['productid'])
-        ->value('config_option7');
-    $trafficLimit = $originalTraffic ? (int)$originalTraffic : 10;
-    Db::name('host')->where('id', $params['hostid'])->update(['bwlimit' => $trafficLimit]);
-    
     if (isset($res['code']) && $res['code'] == 200) {
         return ['status' => 'success', 'msg' => $res['msg'] ?? '流量重置成功'];
     }
