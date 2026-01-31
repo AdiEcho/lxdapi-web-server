@@ -266,7 +266,6 @@ function lxdapiuserserver_CreateAccount($params)
                 'domainstatus' => 'Active',
                 'username'     => 'root',
                 'dedicatedip'  => $params['server_ip'],
-                'bwlimit'      => (int)($configoptions['traffic_limit'] ?? 100),
             ];
             
             Db::name('host')->where('id', $params['hostid'])->update($update);
