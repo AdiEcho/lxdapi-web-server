@@ -52,17 +52,13 @@ install_package() {
 }
 
 install_base_packages() {
-    info "更新软件包列表..."
-    apt-get update >/dev/null 2>&1
-    apt-get autoremove -y >/dev/null 2>&1
-    
-    info "安装基础软件包..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y unzip e2fsprogs bc fdisk parted nginx >/dev/null 2>&1
-    ok "软件包安装完成"
-    
-    systemctl enable nginx >/dev/null 2>&1
-    systemctl start nginx >/dev/null 2>&1
-    ok "nginx 已启动"
+	info "更新软件包列表..."
+	apt-get update >/dev/null 2>&1
+	apt-get autoremove -y >/dev/null 2>&1
+
+	info "安装基础软件包..."
+	DEBIAN_FRONTEND=noninteractive apt-get install -y unzip e2fsprogs bc fdisk parted >/dev/null 2>&1
+	ok "软件包安装完成"
 }
 
 deploy_lxdapi() {
@@ -165,10 +161,32 @@ configure_lxdapi() {
     
     reading "请输入任务自动清理天数 [7]：" auto_cleanup_days
     auto_cleanup_days=${auto_cleanup_days:-7}
-    
+   
+    reading "是否启用 Nginx 反向代理插件？ y/n [y]：" nginx_enabled
+    nginx_enabled=${nginx_enabled:-y}
+    if [[ "$nginx_enabled" =~ ^[yY]$ ]]; then
+    	install_package nginx
+    	systemctl enable nginx >/dev/null 2>&1
+    	systemctl start nginx >/dev/null 2>&1
+    	ok "nginx 已安装并启动"
+    	nginx_enabled_value="true"
+   
+    	reading "是否启用 ACME 证书插件？ y/n [y]：" acme_enabled
+    	acme_enabled=${acme_enabled:-y}
+    	if [[ "$acme_enabled" =~ ^[yY]$ ]]; then
+    		acme_enabled_value="true"
+    	else
+    		acme_enabled_value="false"
+    	fi
+    else
+    	warn "Nginx 已禁用，ACME 插件将同时禁用"
+    	nginx_enabled_value="false"
+    	acme_enabled_value="false"
+    fi
+   
     task_backend="memory"
     db_type="sqlite"
-    
+   
     info "写入配置文件..."
     sed -i "s|__SERVER_PORT__|$server_port|g" "$config_file"
     sed -i "s|__API_HASH__|$api_hash|g" "$config_file"
@@ -195,9 +213,11 @@ configure_lxdapi() {
     sed -i "s|__POSTGRES_PASSWORD__||g" "$config_file"
     sed -i "s|__POSTGRES_DATABASE__|lxdapi|g" "$config_file"
     sed -i "s|__POSTGRES_SSLMODE__|disable|g" "$config_file"
-    
+    sed -i "s|__NGINX_ENABLED__|$nginx_enabled_value|g" "$config_file"
+    sed -i "s|__ACME_ENABLED__|$acme_enabled_value|g" "$config_file"
+   
     ok "配置文件已更新 (已固定 SQLite & Memory 模式)"
-}
+   }
 
 setup_lxdapi_service() {
     info "配置 lxdapi 系统服务..."
