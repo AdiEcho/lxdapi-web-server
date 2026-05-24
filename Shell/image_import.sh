@@ -1,4 +1,12 @@
 #!/bin/bash
+if ! command -v lxc >/dev/null 2>&1; then
+    echo -e "\033[0;31m[ERROR]\033[0m 未检测到 lxc 命令，请关闭当前终端并重新打开，或者重新连接终端后，再次运行此脚本" >&2
+    exit 1
+fi
+
+lxc() {
+    command lxc "$@"
+}
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -6,7 +14,7 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-LXC="/snap/bin/lxc"
+LXC="lxc"
 
 ok() { echo -e "${GREEN}[OK]${NC} $1"; }
 err() { echo -e "${RED}[ERROR]${NC} $1"; }
@@ -68,12 +76,18 @@ download_and_import() {
     if wget -q --show-progress -O "$temp_file" "$image_url" 2>&1; then
         info "导入到 LXD..."
         local alias="${image_name}-${image_type}"
-        if $LXC image import "$temp_file" --alias "$alias" 2>/dev/null; then
+        local import_err=$(mktemp)
+        if $LXC image import "$temp_file" --alias "$alias" 2>"$import_err"; then
             ok "成功导入: $alias"
         else
             warn "导入失败: $alias"
+            if [ -s "$import_err" ]; then
+                err "详细报错信息："
+                cat "$import_err" >&2
+            fi
         fi
         rm -f "$temp_file"
+        rm -f "$import_err"
     else
         warn "下载失败: ${image_name}-${ARCH}-${image_type}"
         rm -f "$temp_file"
@@ -83,10 +97,10 @@ download_and_import() {
 show_image_list() {
     echo
     echo "============================================================================================================"
-    echo " 1) almalinux-8        2) almalinux-9       3) alpine-320        4) alpine-321        5) alpine-322"
-    echo " 6) archlinux-latest   7) centos-9-Stream   8) debian-11         9) debian-12        10) debian-13"
-    echo "11) fedora-42         12) fedora-43        13) opensuse-156     14) opensuse-tumbleweed"
-    echo "15) rockylinux-8      16) rockylinux-9     17) ubuntu-2204      18) ubuntu-2404"
+    echo " [1] almalinux-8       [2] almalinux-9      [3] alpine-320       [4] alpine-321       [5] alpine-322"
+    echo " [6] archlinux-latest  [7] centos-9-Stream  [8] debian-11        [9] debian-12       [10] debian-13"
+    echo "[11] fedora-42        [12] fedora-43       [13] opensuse-156    [14] opensuse-tumbleweed"
+    echo "[15] rockylinux-8     [16] rockylinux-9    [17] ubuntu-2204     [18] ubuntu-2404"
     echo "============================================================================================================"
     echo
 }
@@ -96,34 +110,22 @@ menu_import() {
     info "=== 导入镜像 ==="
     show_image_list
     
-    reading "输入编号，多个用逗号分隔，或 all 全部导入 [8,9,17,18]: " image_choices
-    image_choices=${image_choices:-"8,9,17,18"}
+    reading "输入编号，多个用空格或逗号分隔，或输入 all 全部导入 [默认 8 9 17 18]：" image_choices
+    image_choices=${image_choices:-"8 9 17 18"}
     
-    while true; do
-        reading "选择镜像类型 lxc/kvm [lxc]: " image_type
-        image_type=${image_type:-lxc}
-        if [[ "$image_type" =~ ^(lxc|kvm)$ ]]; then
-            break
-        else
-            warn "请输入 lxc 或 kvm"
-        fi
-    done
+    local image_type="lxc"
     
-    if [[ "$image_type" == "kvm" && "$ARCH" == "arm64" ]]; then
-        warn "KVM 镜像不支持 arm64 架构"
-        return
-    fi
-    
+    selected_images=()
     if [[ "$image_choices" == "all" ]]; then
         selected_images=("${IMAGE_LIST[@]}")
     else
-        IFS=',' read -ra choices <<< "$image_choices"
-        selected_images=()
-        for choice in "${choices[@]}"; do
-            choice=$(echo "$choice" | xargs)
-            idx=$((choice - 1))
-            if [[ $idx -ge 0 && $idx -lt ${#IMAGE_LIST[@]} ]]; then
-                selected_images+=("${IMAGE_LIST[$idx]}")
+        local cleaned_choices=$(echo "$image_choices" | tr -s ',; ' ' ')
+        for choice in $cleaned_choices; do
+            if [[ "$choice" =~ ^[0-9]+$ ]]; then
+                local idx=$((choice - 1))
+                if [[ $idx -ge 0 && $idx -lt ${#IMAGE_LIST[@]} ]]; then
+                    selected_images+=("${IMAGE_LIST[$idx]}")
+                fi
             fi
         done
     fi
@@ -133,12 +135,12 @@ menu_import() {
         return
     fi
     
-    ok "已选择 ${#selected_images[@]} 个镜像 (${image_type})"
+    ok "已选择 ${#selected_images[@]} 个镜像"
     echo
     
-    current=0
+    local current=0
     for img in "${selected_images[@]}"; do
-        ((current++))
+        current=$((current + 1))
         echo "[$current/${#selected_images[@]}]"
         download_and_import "$img" "$image_type"
         echo
@@ -156,13 +158,13 @@ menu_delete() {
     info "=== 删除镜像 ==="
     $LXC image list
     echo
-    reading "输入要删除的镜像别名或指纹: " image_id
+    reading "输入要删除的镜像别名或指纹：" image_id
     if [ -z "$image_id" ]; then
         return
     fi
     
     warn "确认删除镜像 $image_id？"
-    reading "确认？(y/n) [n]: " confirm
+    reading "确认选择请输入 y，取消请输入 n，默认 n：" confirm
     if [[ "$confirm" =~ ^[yY]$ ]]; then
         if $LXC image delete "$image_id"; then
             ok "镜像已删除"
@@ -170,7 +172,7 @@ menu_delete() {
             err "删除失败"
         fi
     else
-        info "已取消"
+        info "已取消删除"
     fi
 }
 
@@ -186,7 +188,7 @@ main_menu() {
         echo "3. 删除镜像"
         echo "0. 退出"
         echo "================================"
-        reading "请选择 [0-3]: " choice
+        reading "请选择 [0-3]：" choice
         
         case "$choice" in
             1) menu_import ;;

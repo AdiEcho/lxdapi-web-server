@@ -170,18 +170,9 @@ configure_lxdapi() {
     	systemctl start nginx >/dev/null 2>&1
     	ok "nginx 已安装并启动"
     	nginx_enabled_value="true"
-   
-    	reading "是否启用 ACME 证书插件？ y/n [y]：" acme_enabled
-    	acme_enabled=${acme_enabled:-y}
-    	if [[ "$acme_enabled" =~ ^[yY]$ ]]; then
-    		acme_enabled_value="true"
-    	else
-    		acme_enabled_value="false"
-    	fi
     else
-    	warn "Nginx 已禁用，ACME 插件将同时禁用"
+    	warn "Nginx 已禁用"
     	nginx_enabled_value="false"
-    	acme_enabled_value="false"
     fi
    
     task_backend="memory"
@@ -214,7 +205,6 @@ configure_lxdapi() {
     sed -i "s|__POSTGRES_DATABASE__|lxdapi|g" "$config_file"
     sed -i "s|__POSTGRES_SSLMODE__|disable|g" "$config_file"
     sed -i "s|__NGINX_ENABLED__|$nginx_enabled_value|g" "$config_file"
-    sed -i "s|__ACME_ENABLED__|$acme_enabled_value|g" "$config_file"
    
     ok "配置文件已更新 (已固定 SQLite & Memory 模式)"
    }
