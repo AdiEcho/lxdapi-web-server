@@ -78,6 +78,8 @@ check_and_update_kernel() {
         expected_keep="6.12.88+deb13-arm64"
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "13" ]; then
         expected_keep="6.12.88+deb13-amd64"
+    elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "13" ]; then
+        expected_keep="6.12.90+deb13-arm64"
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "13" ]; then
         expected_keep="6.12.90+deb13-amd64"
     else
@@ -156,6 +158,8 @@ install_zfs() {
             modules_file="zfs-modules-arm64-6.1.0-48-arm64-zfs2.2.7.tgz"
         elif [[ "$current_kernel" =~ "6.12.88+deb13-arm64" ]]; then
             modules_file="zfs-modules-arm64-6.12.88+deb13-arm64-zfs2.3.0.tgz"
+        elif [[ "$current_kernel" =~ "6.12.90+deb13-arm64" ]]; then
+            modules_file="zfs-modules-arm64-6.12.90+deb13-arm64-zfs2.3.0.tgz"
         else
             log_err "当前内核版本未在支持的 ZFS 预编译模块列表中: $current_kernel"
         fi
