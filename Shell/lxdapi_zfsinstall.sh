@@ -75,14 +75,9 @@ check_and_update_kernel() {
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "12" ]; then
         expected_keep="6.1.0-48-amd64"
     elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "13" ]; then
-        expected_keep="6.12.88+deb13-arm64"
-    elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "13" ]; then
-        expected_keep="6.12.88+deb13-amd64"
-    elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "13" ]; then
         expected_keep="6.12.90+deb13-arm64"
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "13" ]; then
         expected_keep="6.12.90+deb13-amd64"
-    else
         log_err "不支持的组合: $sys_arch / Debian $debian_ver"
     fi
     
@@ -144,8 +139,6 @@ install_zfs() {
             modules_file="zfs-modules-amd64-5.10.0-43-amd64-zfs2.1.15.tgz"
         elif [[ "$current_kernel" =~ "6.1.0-48-amd64" ]]; then
             modules_file="zfs-modules-amd64-6.1.0-48-amd64-zfs2.2.7.tgz"
-        elif [[ "$current_kernel" =~ "6.12.88+deb13-amd64" ]]; then
-            modules_file="zfs-modules-amd64-6.12.88+deb13-amd64-zfs2.3.0.tgz"
         elif [[ "$current_kernel" =~ "6.12.90+deb13-amd64" ]]; then
             modules_file="zfs-modules-amd64-6.12.90+deb13-amd64-zfs2.3.0.tgz"
         else
@@ -156,8 +149,6 @@ install_zfs() {
             modules_file="zfs-modules-arm64-5.10.0-43-arm64-zfs2.1.15.tgz"
         elif [[ "$current_kernel" =~ "6.1.0-48-arm64" ]]; then
             modules_file="zfs-modules-arm64-6.1.0-48-arm64-zfs2.2.7.tgz"
-        elif [[ "$current_kernel" =~ "6.12.88+deb13-arm64" ]]; then
-            modules_file="zfs-modules-arm64-6.12.88+deb13-arm64-zfs2.3.0.tgz"
         elif [[ "$current_kernel" =~ "6.12.90+deb13-arm64" ]]; then
             modules_file="zfs-modules-arm64-6.12.90+deb13-arm64-zfs2.3.0.tgz"
         else
