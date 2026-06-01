@@ -67,17 +67,18 @@ check_and_update_kernel() {
     
     local expected_keep=""
     if [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "11" ]; then
-        expected_keep="5.10.0-43-arm64"
+        expected_keep="5.10.0-44-arm64"
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "11" ]; then
-        expected_keep="5.10.0-43-amd64"
+        expected_keep="5.10.0-44-amd64"
     elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "12" ]; then
-        expected_keep="6.1.0-48-arm64"
+        expected_keep="6.1.0-49-arm64"
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "12" ]; then
-        expected_keep="6.1.0-48-amd64"
+        expected_keep="6.1.0-49-amd64"
     elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "13" ]; then
-        expected_keep="6.12.90+deb13-arm64"
+        expected_keep="6.12.90+deb13.1-arm64"
     elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "13" ]; then
-        expected_keep="6.12.90+deb13-amd64"
+        expected_keep="6.12.90+deb13.1-amd64"
+    else
         log_err "不支持的组合: $sys_arch / Debian $debian_ver"
     fi
     
@@ -135,22 +136,22 @@ install_zfs() {
     
     local modules_file=""
     if [ "$sys_arch" = "amd64" ]; then
-        if [[ "$current_kernel" =~ "5.10.0-43-amd64" ]]; then
-            modules_file="zfs-modules-amd64-5.10.0-43-amd64-zfs2.1.15.tgz"
-        elif [[ "$current_kernel" =~ "6.1.0-48-amd64" ]]; then
-            modules_file="zfs-modules-amd64-6.1.0-48-amd64-zfs2.2.7.tgz"
-        elif [[ "$current_kernel" =~ "6.12.90+deb13-amd64" ]]; then
-            modules_file="zfs-modules-amd64-6.12.90+deb13-amd64-zfs2.3.0.tgz"
+        if [[ "$current_kernel" =~ "5.10.0-44-amd64" ]]; then
+            modules_file="zfs-modules-amd64-5.10.0-44-amd64-zfs2.1.15.tgz"
+        elif [[ "$current_kernel" =~ "6.1.0-49-amd64" ]]; then
+            modules_file="zfs-modules-amd64-6.1.0-49-amd64-zfs2.2.7.tgz"
+        elif [[ "$current_kernel" =~ "6.12.90+deb13.1-amd64" ]]; then
+            modules_file="zfs-modules-amd64-6.12.90+deb13.1-amd64-zfs2.3.0.tgz"
         else
             log_err "当前内核版本未在支持的 ZFS 预编译模块列表中: $current_kernel"
         fi
     elif [ "$sys_arch" = "arm64" ]; then
-        if [[ "$current_kernel" =~ "5.10.0-43-arm64" ]]; then
-            modules_file="zfs-modules-arm64-5.10.0-43-arm64-zfs2.1.15.tgz"
-        elif [[ "$current_kernel" =~ "6.1.0-48-arm64" ]]; then
-            modules_file="zfs-modules-arm64-6.1.0-48-arm64-zfs2.2.7.tgz"
-        elif [[ "$current_kernel" =~ "6.12.90+deb13-arm64" ]]; then
-            modules_file="zfs-modules-arm64-6.12.90+deb13-arm64-zfs2.3.0.tgz"
+        if [[ "$current_kernel" =~ "5.10.0-44-arm64" ]]; then
+            modules_file="zfs-modules-arm64-5.10.0-44-arm64-zfs2.1.15.tgz"
+        elif [[ "$current_kernel" =~ "6.1.0-49-arm64" ]]; then
+            modules_file="zfs-modules-arm64-6.1.0-49-arm64-zfs2.2.7.tgz"
+        elif [[ "$current_kernel" =~ "6.12.90+deb13.1-arm64" ]]; then
+            modules_file="zfs-modules-arm64-6.12.90+deb13.1-arm64-zfs2.3.0.tgz"
         else
             log_err "当前内核版本未在支持的 ZFS 预编译模块列表中: $current_kernel"
         fi
