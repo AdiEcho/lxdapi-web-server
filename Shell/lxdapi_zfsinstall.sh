@@ -54,140 +54,109 @@ check_system() {
 
 check_and_update_kernel() {
     log_info "正在检测内核版本"
-    
+
     local current_kernel=`uname -r`
     log_info "当前内核版本: $current_kernel"
-    
+
     if [ "$SYSTEM" != "Debian" ]; then
         log_err "该内核更新策略仅支持 Debian 系统"
     fi
-    
-    local debian_ver=`grep VERSION_ID /etc/os-release | cut -d'"' -f2`
+
     local sys_arch=`dpkg --print-architecture`
-    
-    local expected_keep=""
-    if [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "11" ]; then
-        expected_keep="5.10.0-44-arm64"
-    elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "11" ]; then
-        expected_keep="5.10.0-44-amd64"
-    elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "12" ]; then
-        expected_keep="6.1.0-49-arm64"
-    elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "12" ]; then
-        expected_keep="6.1.0-49-amd64"
-    elif [ "$sys_arch" = "arm64" ] && [ "$debian_ver" = "13" ]; then
-        expected_keep="6.12.90+deb13.1-arm64"
-    elif [ "$sys_arch" = "amd64" ] && [ "$debian_ver" = "13" ]; then
-        expected_keep="6.12.90+deb13.1-amd64"
-    else
-        log_err "不支持的组合: $sys_arch / Debian $debian_ver"
+
+    local is_cloud_kernel=0
+    if [[ "$current_kernel" =~ "cloud" ]]; then
+        is_cloud_kernel=1
+        log_warn "检测到 cloud 精简内核，不支持 ZFS 编译"
     fi
-    
-    if [[ "$current_kernel" =~ "$expected_keep" ]]; then
-        log_ok "内核检测通过，当前已运行匹配的 ZFS 内核版本"
+
+    if [ $is_cloud_kernel -eq 0 ]; then
+        log_ok "内核检测通过，当前已运行完整内核"
         return 0
     fi
-    
-    log_warn "当前内核不匹配，未通过内核检测"
-    read -rp "是否确认安装并更新系统内核为 $expected_keep ？[y/n]: " confirm_install
+
+    log_warn "需要更新为完整内核以支持 ZFS 编译"
+
+    read -rp "是否确认安装并更新系统内核为最新完整内核？[y/n]: " confirm_install
     confirm_install=${confirm_install:-n}
-    
+
     if [[ ! "$confirm_install" =~ ^[yY]$ ]]; then
         log_err "内核更新已取消，安装终止"
     fi
-    
+
     log_info "开始更新系统内核"
-    
-    if [ "$debian_ver" = "13" ]; then
-        if [ ! -f /etc/apt/sources.list.d/sid.list ]; then
-            echo "deb http://ftp.de.debian.org/debian sid main contrib" > /etc/apt/sources.list.d/sid.list
-        fi
-    fi
-    
+
     apt-get update
-    
-    local img_pkg="linux-image-$expected_keep"
-    local headers_pkg="linux-headers-$expected_keep"
-    
+
+    local img_pkg="linux-image-$sys_arch"
+    local headers_pkg="linux-headers-$sys_arch"
+
     if apt-get install -y "$img_pkg" "$headers_pkg"; then
-        if ls /boot/vmlinuz-*$expected_keep* >/dev/null 2>&1; then
-            log_info "正在清理旧内核文件"
-            find /boot -maxdepth 1 -type f -name "vmlinuz-*" ! -name "*$expected_keep*" -delete
-            find /boot -maxdepth 1 -type f -name "initrd.img-*" ! -name "*$expected_keep*" -delete
-            find /boot -maxdepth 1 -type f -name "System.map-*" ! -name "*$expected_keep*" -delete
-            find /boot -maxdepth 1 -type f -name "config-*" ! -name "*$expected_keep*" -delete
-            
-            update-grub
-            log_ok "内核已更新为 $sys_arch 版本的 $expected_keep"
-            log_warn "请手动执行 reboot 重启系统，重启后请重新运行该脚本"
-            exit 0
-        else
-            log_err "内核文件未在 boot 目录中找到，操作已拦截"
-        fi
+        log_info "正在卸载旧的 cloud 内核包"
+        dpkg -l | grep -E "linux-image-.*cloud|linux-headers-.*cloud" | awk '{print $2}' | xargs -r apt-get purge -y
+
+        log_info "正在清理旧内核文件"
+        find /boot -maxdepth 1 -type f -name "vmlinuz-*cloud*" -delete
+        find /boot -maxdepth 1 -type f -name "initrd.img-*cloud*" -delete
+        find /boot -maxdepth 1 -type f -name "System.map-*cloud*" -delete
+        find /boot -maxdepth 1 -type f -name "config-*cloud*" -delete
+
+        log_info "正在清理无用软件包"
+        apt-get autoremove -y
+
+        update-grub
+        log_ok "内核已更新为最新完整内核"
+        log_warn "请手动执行 reboot 重启系统，重启后请重新运行该脚本"
+        exit 0
     else
         log_err "内核包获取失败或安装未成功，操作已拦截"
     fi
 }
 
 install_zfs() {
-    log_info "开始安装匹配版本的 ZFS"
-    
+    if [ "$SYSTEM" = "Ubuntu" ]; then
+        log_ok "Ubuntu 系统自带 ZFS 模块，跳过安装"
+        return 0
+    fi
+
+    log_info "开始安装 ZFS 通过 DKMS 编译"
+
     local current_kernel=`uname -r`
-    local sys_arch=`dpkg --print-architecture`
-    
-    local modules_file=""
-    if [ "$sys_arch" = "amd64" ]; then
-        if [[ "$current_kernel" =~ "5.10.0-44-amd64" ]]; then
-            modules_file="zfs-modules-amd64-5.10.0-44-amd64-zfs2.1.15.tgz"
-        elif [[ "$current_kernel" =~ "6.1.0-49-amd64" ]]; then
-            modules_file="zfs-modules-amd64-6.1.0-49-amd64-zfs2.2.7.tgz"
-        elif [[ "$current_kernel" =~ "6.12.90+deb13.1-amd64" ]]; then
-            modules_file="zfs-modules-amd64-6.12.90+deb13.1-amd64-zfs2.3.0.tgz"
-        else
-            log_err "当前内核版本未在支持的 ZFS 预编译模块列表中: $current_kernel"
-        fi
-    elif [ "$sys_arch" = "arm64" ]; then
-        if [[ "$current_kernel" =~ "5.10.0-44-arm64" ]]; then
-            modules_file="zfs-modules-arm64-5.10.0-44-arm64-zfs2.1.15.tgz"
-        elif [[ "$current_kernel" =~ "6.1.0-49-arm64" ]]; then
-            modules_file="zfs-modules-arm64-6.1.0-49-arm64-zfs2.2.7.tgz"
-        elif [[ "$current_kernel" =~ "6.12.90+deb13.1-arm64" ]]; then
-            modules_file="zfs-modules-arm64-6.12.90+deb13.1-arm64-zfs2.3.0.tgz"
-        else
-            log_err "当前内核版本未在支持的 ZFS 预编译模块列表中: $current_kernel"
-        fi
-    else
-        log_err "不支持的架构: $sys_arch"
+
+    if [[ "$current_kernel" =~ "cloud" ]]; then
+        log_err "检测到 cloud 精简内核，不支持 ZFS 编译，请先更新为完整内核"
     fi
-    
-    local download_base="https://github.com/xkatld/lxdapi-web-server/releases/download/zfs"
-    
-    log_info "正在从 GitHub 官方源下载匹配的 ZFS 模块文件"
-    cd /tmp
-    if ! wget -q --show-progress -O "$modules_file" "$download_base/$modules_file"; then
-        log_err "ZFS 模块下载失败"
+
+    log_info "正在更新软件包索引"
+    apt-get update
+
+    log_info "正在安装当前内核头文件"
+    if ! apt-get install -y linux-headers-$current_kernel; then
+        log_err "内核头文件安装失败"
     fi
-    
-    log_info "正在解压并部署 ZFS 模块"
-    mkdir -p /lib/modules/$current_kernel/updates/dkms/
-    tar -xzf "$modules_file"
-    cp zfs-modules/*.ko.xz /lib/modules/$current_kernel/updates/dkms/
-    
-    log_info "正在更新模块依赖并加载"
+
+    log_info "正在安装 ZFS DKMS 模块和用户态工具"
+    if ! apt-get install -y zfs-dkms zfsutils-linux; then
+        log_err "ZFS 软件包安装失败"
+    fi
+
+    log_info "正在更新模块依赖"
     depmod -a $current_kernel
+
+    log_info "正在加载 ZFS 内核模块"
     modprobe spl
     modprobe zfs
-    
+
     if ! lsmod | grep -q zfs; then
         log_err "ZFS 模块加载失败"
     fi
-    
-    log_info "正在安装 ZFS 用户态工具"
-    apt-get install -y zfsutils-linux --no-install-recommends
-    
-    log_info "正在清理临时安装文件"
-    rm -f "/tmp/$modules_file"
-    rm -rf /tmp/zfs-modules
-    
+
+    log_info "正在配置 ZFS 模块开机自动加载"
+    echo "zfs" > /etc/modules-load.d/zfs.conf
+
+    log_info "正在启用 ZFS 系统服务"
+    systemctl enable zfs-import-cache zfs-import-scan zfs-mount zfs-share
+
     log_ok "ZFS 模块及工具安装部署完成"
 }
 
